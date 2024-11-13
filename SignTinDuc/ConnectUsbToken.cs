@@ -37,6 +37,7 @@ namespace SignTinDuc
                     // Lấy thông tin của token trong slot hiện tại
                     ITokenInfo tokenInfo = slot.GetTokenInfo();
 
+
                     Console.WriteLine("Thông tin thiết bị USB token:");
                     Console.WriteLine($"- Tên token: {tokenInfo.Label}");
                     Console.WriteLine($"- Số serial: {tokenInfo.SerialNumber}");

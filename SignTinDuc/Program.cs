@@ -1,4 +1,4 @@
-namespace SignTinDuc
+﻿namespace SignTinDuc
 {
     internal static class Program
     {
@@ -8,10 +8,23 @@ namespace SignTinDuc
         [STAThread]
         static void Main()
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
-            ApplicationConfiguration.Initialize();
-            Application.Run(new Form1());
+            // chỉ chạy socket ngầm
+            // đầu tiên sẽ cần phải quét danh sách file cer
+            // kiểm tra lấy thông tin các thiết bị
+            bool showForm = false;
+            if (showForm)
+            {
+                ApplicationConfiguration.Initialize();
+                Application.Run(new Form1());
+            }
+            else
+            {
+                // danh sách dll kết nối chuẩn pkcs11 thiết bị usb token
+                List<string> test = ScanFolderLoadDll.FindPKCS11DLLs();
+                // Lấy thông tin chứng thư số
+                var list =Certificate.GetListCert();
+
+            }
         }
     }
 }
