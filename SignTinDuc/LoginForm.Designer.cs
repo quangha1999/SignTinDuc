@@ -1,6 +1,6 @@
 ﻿namespace SignTinDuc
 {
-    partial class Form1
+    partial class LoginForm
     {
         /// <summary>
         ///  Required designer variable.
@@ -28,9 +28,9 @@
         /// </summary>
         private void InitializeComponent()
         {
+            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(LoginForm));
             textBox1 = new TextBox();
             label1 = new Label();
-            btnChangePin = new Button();
             btnLogin = new Button();
             btnHuy = new Button();
             label2 = new Label();
@@ -42,39 +42,32 @@
             // 
             textBox1.Location = new Point(188, 75);
             textBox1.Name = "textBox1";
-            textBox1.Size = new Size(357, 23);
+            textBox1.Size = new Size(239, 23);
             textBox1.TabIndex = 0;
+            textBox1.UseSystemPasswordChar = true;
             // 
             // label1
             // 
             label1.AutoSize = true;
-            label1.Location = new Point(115, 78);
+            label1.Location = new Point(121, 78);
             label1.Name = "label1";
             label1.Size = new Size(46, 15);
             label1.TabIndex = 1;
             label1.Text = "Mã PIN";
             // 
-            // btnChangePin
-            // 
-            btnChangePin.Location = new Point(188, 137);
-            btnChangePin.Name = "btnChangePin";
-            btnChangePin.Size = new Size(106, 33);
-            btnChangePin.TabIndex = 2;
-            btnChangePin.Text = "Đổi mã pin";
-            btnChangePin.UseVisualStyleBackColor = true;
-            // 
             // btnLogin
             // 
-            btnLogin.Location = new Point(315, 137);
+            btnLogin.Location = new Point(188, 126);
             btnLogin.Name = "btnLogin";
             btnLogin.Size = new Size(106, 33);
             btnLogin.TabIndex = 3;
             btnLogin.Text = "Đăng nhập";
             btnLogin.UseVisualStyleBackColor = true;
+            btnLogin.Click += btnLogin_Click;
             // 
             // btnHuy
             // 
-            btnHuy.Location = new Point(439, 137);
+            btnHuy.Location = new Point(321, 126);
             btnHuy.Name = "btnHuy";
             btnHuy.Size = new Size(106, 33);
             btnHuy.TabIndex = 4;
@@ -84,34 +77,37 @@
             // label2
             // 
             label2.AutoSize = true;
-            label2.Location = new Point(188, 22);
+            label2.Font = new Font("Segoe UI", 15.75F, FontStyle.Regular, GraphicsUnit.Point, 0);
+            label2.Location = new Point(117, 17);
             label2.Name = "label2";
-            label2.Size = new Size(98, 15);
+            label2.Size = new Size(174, 30);
             label2.TabIndex = 5;
             label2.Text = "Xác nhận mã PIN";
             // 
             // pictureIcon
             // 
-            pictureIcon.Location = new Point(31, 22);
+            pictureIcon.Location = new Point(31, 29);
             pictureIcon.Name = "pictureIcon";
             pictureIcon.Size = new Size(53, 50);
             pictureIcon.TabIndex = 6;
             pictureIcon.TabStop = false;
             // 
-            // Form1
+            // LoginForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 450);
+            ClientSize = new Size(507, 200);
             Controls.Add(pictureIcon);
             Controls.Add(label2);
             Controls.Add(btnHuy);
             Controls.Add(btnLogin);
-            Controls.Add(btnChangePin);
             Controls.Add(label1);
             Controls.Add(textBox1);
-            Name = "Form1";
+            Icon = (Icon)resources.GetObject("$this.Icon");
+            Name = "LoginForm";
+            StartPosition = FormStartPosition.CenterScreen;
             Text = "Xác nhận PIN";
+            Load += LoginForm_Load;
             ((System.ComponentModel.ISupportInitialize)pictureIcon).EndInit();
             ResumeLayout(false);
             PerformLayout();
@@ -121,7 +117,6 @@
 
         private TextBox textBox1;
         private Label label1;
-        private Button btnChangePin;
         private Button btnLogin;
         private Button btnHuy;
         private Label label2;
