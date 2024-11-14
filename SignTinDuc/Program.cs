@@ -20,10 +20,10 @@
             else
             {
                 // danh sách dll kết nối chuẩn pkcs11 thiết bị usb token
-                List<string> test = ScanFolderLoadDll.FindPKCS11DLLs();
+                //List<string> test = ScanFolderLoadDll.FindPKCS11DLLs();
                 // Lấy thông tin chứng thư số
-                var list =Certificate.GetListCert();
-
+                //var list =Certificate.GetListCert();
+                AsynchronousSocketListener.StartListening();
             }
         }
     }

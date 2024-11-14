@@ -118,7 +118,6 @@ namespace SignTinDuc
         // Tải icon từ thư viện DLL
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
-
         public static Icon GetIconFromDll(string dllPath, int iconIndex = 0)
         {
             // Tải DLL vào bộ nhớ
