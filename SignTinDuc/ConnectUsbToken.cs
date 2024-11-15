@@ -7,6 +7,7 @@ using iText.Kernel.Pdf;
 using iText.Signatures;
 using Net.Pkcs11Interop.Common;
 using Net.Pkcs11Interop.HighLevelAPI;
+using Newtonsoft.Json;
 using Org.BouncyCastle.X509;
 using System;
 using System.Runtime.InteropServices;
@@ -18,95 +19,153 @@ namespace SignTinDuc
 {
     public class ConnectUsbToken
     {
-        static string PKCS11LibPath = @"E:\Code\PluginSign\nca_v6.dll";
+        //static string PKCS11LibPath = @"E:\Code\PluginSign\nca_v6.dll";
+        static string PKCS11LibPath = @"E:\Code\PluginSign\fpt-ca.dll";
         static string filePath = @"E:\Code\PluginSign\export-pdf-demo.pdf";
         static string filePathSign = @"E:\Code\PluginSign\export-pdf-sign.pdf";
         static string fileXmlPath = @"E:\Code\PluginSign\export-xml-sign.xml";
         static string fileSignXml = @"E:\Code\PluginSign\export-xml-sign-g.xml";
-        /// <summary>
-        /// Lấy thông tin thiết bị usbtoken
-        /// </summary>
-        /// <param name="pkcs11LibPath"></param>
-        public static void GetUsbTokenInformation(string pkcs11LibPath, string password)
+        #region Kiểm tra lấy DLL tương ứng với thiết bị
+        public static string CheckDLLMatchUSB(string[] arrData, string serial)
         {
+            var lstDLL = ScanFolderLoadDll.FindPKCS11DLLs(arrData);
+            string pathDLL = "";
             // Khởi tạo thư viện PKCS#11
-            Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
-            using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+            if (lstDLL != null && lstDLL.Count > 0)
             {
-                // Lấy danh sách các slot có token đang kết nối
-                List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
-                if (slots.Count == 0)
+                Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
+                foreach (string pkcs11LibPath in lstDLL)
                 {
-                    Console.WriteLine("Không tìm thấy thiết bị USB token nào.");
-                    return;
-                }
-
-                // Duyệt qua từng slot để lấy thông tin token
-                foreach (ISlot slot in slots)
-                {
-                    // Lấy thông tin của token trong slot hiện tại
-                    ITokenInfo tokenInfo = slot.GetTokenInfo();
-
-                    Console.WriteLine("Thông tin thiết bị USB token:");
-                    Console.WriteLine($"- Tên token: {tokenInfo.Label}");
-                    Console.WriteLine($"- Số serial: {tokenInfo.SerialNumber}");
-                    Console.WriteLine($"- Hãng sản xuất: {tokenInfo.ManufacturerId}");
-                    Console.WriteLine($"- Model: {tokenInfo.Model}");
-                    //Console.WriteLine($"- Trạng thái token: {tokenInfo.Flags}");
-                    // Mở session và đăng nhập vào token
-                    using (ISession session = slot.OpenSession(SessionType.ReadOnly))
+                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
                     {
-                        // Tìm kiếm và lấy chứng chỉ X.509 từ token
-                        session.Login(CKU.CKU_USER, password);
-                        // check login 
-
-                        var objectAttributes = new List<IObjectAttribute>
+                        List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
+                        if (slots != null && slots.Count > 0)
                         {
-                            factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_CERTIFICATE),       // Đối tượng là chứng chỉ
-                            factories.ObjectAttributeFactory.Create(CKA.CKA_CERTIFICATE_TYPE, CKC.CKC_X_509)   // Chứng chỉ loại X.509
-                        };
-                        // Tìm kiếm tất cả các đối tượng khớp với thuộc tính
-                        List<IObjectHandle> certificates = session.FindAllObjects(objectAttributes);
-                        // chỉ lấy chứng thư số còn hạn sử dụng
-                        // nếu đã hết hạn thì cảnh báo lỗi
-                        var certHandle = certificates[0];
-
-                        // Lấy khóa cá nhân từ token
-                        var keyAttributes = new List<IObjectAttribute>
-                        {
-                            factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_PRIVATE_KEY)
-                        };
-                        List<IObjectHandle> privateKeyHandles = session.FindAllObjects(keyAttributes);
-
-                        if (privateKeyHandles.Count > 0)
-                        {
-                            var privateKeyHandle = privateKeyHandles[0];
-                            // Đọc nội dung file cần ký
-                            byte[] data = File.ReadAllBytes(filePath);
-                            byte[] hash = ComputeSha256Hash(data);
-                            //Lấy dữ liệu của chứng chỉ
-                            byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
-                            //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
-                            var certificate = new X509Certificate2(certificateData);
-                            var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA256_RSA_PKCS);
-                            // chữ ký
-                            byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
-                            SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
-                            SignXmlDocument(fileXmlPath, fileSignXml, signature, certificate);
-                            Console.WriteLine("File đã được ký thành công!");
-                        }
-                        else
-                        {
-                            Console.WriteLine("Không tìm thấy khóa cá nhân trên token.");
+                            // thông tin thiết bị
+                            foreach (ISlot slot in slots)
+                            {
+                                ITokenInfo tokenInfo = slot.GetTokenInfo();
+                                // kiểm tra seri khớp với mặc định trên web
+                                if (tokenInfo != null && tokenInfo.SerialNumber == serial)
+                                {
+                                    pathDLL = pkcs11LibPath; break;
+                                }
+                            }
                         }
 
-                        session.Logout();
                     }
-
                 }
             }
+            return pathDLL;
         }
-        // Hàm tính toán SHA-256 hash của dữ liệu
+        #endregion
+        #region Kiểm tra đăng nhập thiết bị ký số
+        public static Result GetUsbTokenInformation(string[] arrdata, string serial)
+        {
+            Result msg = new Result();
+            string pkcs11LibPath = CheckDLLMatchUSB(arrdata, serial);
+            if (PKCS11LibPath == "")
+            {
+                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true);
+            }
+            else
+            {
+                // Khởi tạo thư viện PKCS#11
+                Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
+                try
+                {
+                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+                    {
+                        // Lấy danh sách các slot có token đang kết nối
+                        List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
+                        // Duyệt qua từng slot để lấy thông tin token
+                        foreach (ISlot slot in slots)
+                        {
+                            // Lấy thông tin của token trong slot hiện tại
+                            ITokenInfo tokenInfo = slot.GetTokenInfo();
+                            // kiểm tra cơ chế mã hóa  fpt-ca :29 , nca_v6:51 theo chuẩn này CKM_SHA1_RSA_PKCS, CKM_SHA256_RSA_PKCS
+                            //var mechanisms = slot.GetMechanismList();
+                            var icon = GetIconFromDll(pkcs11LibPath, 0);
+                            // Mở session và đăng nhập vào token
+                            string password = LoginForm.GetPassword(icon, tokenInfo.Model);
+                            if (password != null && password != "")
+                            {
+                                using (ISession session = slot.OpenSession(SessionType.ReadOnly))
+                                {
+                                    try
+                                    {
+                                        // Tìm kiếm và lấy chứng chỉ X.509 từ token
+                                        session.Login(CKU.CKU_USER, password);
+                                        // check login 
+                                        var objectAttributes = new List<IObjectAttribute>
+                                        {
+                                            factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_CERTIFICATE),       // Đối tượng là chứng chỉ
+                                            factories.ObjectAttributeFactory.Create(CKA.CKA_CERTIFICATE_TYPE, CKC.CKC_X_509)   // Chứng chỉ loại X.509
+                                        };
+                                        // Tìm kiếm tất cả các đối tượng khớp với thuộc tính
+                                        List<IObjectHandle> certificates = session.FindAllObjects(objectAttributes);
+                                        var certHandle = certificates[0];
+                                        // Lấy khóa cá nhân từ token
+                                        var keyAttributes = new List<IObjectAttribute>
+                                        {
+                                            factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_PRIVATE_KEY)
+                                        };
+                                        List<IObjectHandle> privateKeyHandles = session.FindAllObjects(keyAttributes);
+                                        if (privateKeyHandles.Count > 0)
+                                        {
+                                            var privateKeyHandle = privateKeyHandles[0];
+                                            // Đọc nội dung file cần ký
+                                            byte[] data = File.ReadAllBytes(filePath);
+                                            byte[] hash = ComputeSha256Hash(data);
+                                            //Lấy dữ liệu của chứng chỉ
+                                            byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
+                                            //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
+                                            var certificate = new X509Certificate2(certificateData);
+                                            // chỉ lấy chứng thư số còn hạn sử dụng
+                                            if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
+                                            {
+                                                var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
+                                                // chữ ký
+                                                byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
+                                                //SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
+                                                //SignXmlDocument(fileXmlPath, fileSignXml, signature, certificate);
+                                                session.Logout();
+                                                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Kết nối đến USB Token thành công.\"}"), true, true);
+                                            }
+                                            else
+                                            {
+                                                session.Logout();
+                                                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            session.Logout();
+                                            msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy khóa cá nhân trên token\"}"), true, true);
+                                        }
+                                    }
+                                    catch (Exception e)
+                                    {
+                                        msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Bạn nhập sai mã PIN\"}"), true, true);
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Bạn chưa nhập mã PIN\"}"), true, true);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không kết nối được USB ký số\"}"), true, true);
+                }
+            }
+            return msg;
+        }
+        #endregion
+        #region Hàm tính toán SHA-256 hash dữ liệu
         private static byte[] ComputeSha256Hash(byte[] data)
         {
             using (var sha256 = System.Security.Cryptography.SHA256.Create())
@@ -114,93 +173,15 @@ namespace SignTinDuc
                 return sha256.ComputeHash(data);
             }
         }
-        private byte[] GetSignatureFromHashViaPkcs11(byte[] hash, string pin)
-        {
-            Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
-            using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, PKCS11LibPath, AppType.SingleThreaded))
-            {
-                ISlot slot = LoadSlot(pkcs11Library, "");
-                using (ISession session = slot.OpenSession(SessionType.ReadOnly))
-                {
-                    session.Login(CKU.CKU_USER, pin);
-
-                    //Search the private key based on the pulblic key CKA_ID
-                    IObjectHandle keyHandle = null;
-                    var searchTemplate = new List<IObjectAttribute>()
-                    {
-                        //CKO_PRIVATE_KEY in order to get handle for the private key
-                        session.Factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_PRIVATE_KEY),
-                        //CKA_ID searching for the private key which matches the public key
-                        //session.Factories.ObjectAttributeFactory.Create(CKA.CKA_ID, CertificateToUse.PublicKeyCKAID.GetValueAsByteArray()),
-                    };
-
-                    //filter the search result. Since we search for a private key, only one is returned for each certificate
-                    var search = session.FindAllObjects(searchTemplate);
-                    keyHandle = search.FirstOrDefault();
-
-                    if (keyHandle == null || (keyHandle.ObjectId == CK.CK_INVALID_HANDLE))
-                    {
-                        throw new Exception("Unable to read SmartCard KeyHandle. Make sure the correct PKCS11 Library is used");
-                    }
-
-                    try
-                    {
-                        //Create the signature (using the pin)
-                        var pinAsByteArray = UTF8Encoding.UTF8.GetBytes(pin);
-                        using (IMechanism mechanism = session.Factories.MechanismFactory.Create(CKM.CKM_SHA256_RSA_PKCS))
-                            return session.Sign(mechanism, keyHandle, pinAsByteArray, hash);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new Exception("Error creating the signature", ex);
-                    }
-                }
-            }
-        }
-        public static ISlot LoadSlot(IPkcs11Library pkcs11Library, string tokenSerial)
-        {
-            // Lấy danh sách các slot có token đang cắm vào
-            List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
-
-            // Kiểm tra từng slot để tìm slot có TokenSerial trùng khớp
-            foreach (var slot in slots)
-            {
-                // Lấy thông tin token trong slot hiện tại
-                ITokenInfo tokenInfo = slot.GetTokenInfo();
-
-                // Kiểm tra TokenSerial với tokenSerial mà chúng ta đang tìm
-                if (tokenInfo.SerialNumber == tokenSerial)
-                {
-                    return slot; // Trả về slot nếu tìm thấy
-                }
-            }
-
-            // Nếu không tìm thấy slot phù hợp, ném ra ngoại lệ
-            throw new Exception($"Không tìm thấy slot nào với TokenSerial: {tokenSerial}");
-        }
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr LoadLibrary(string lpFileName);
-        // Tải icon từ thư viện DLL
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
+        #endregion
+        #region Lấy icon từ DLL
         public static Icon GetIconFromDll(string dllPath, int iconIndex = 0)
         {
-            // Tải DLL vào bộ nhớ
-            IntPtr hLibrary = LoadLibrary(dllPath);
-            if (hLibrary == IntPtr.Zero)
-            {
-                throw new Exception("Không thể tải thư viện DLL.");
-            }
+            Icon icon = Icon.ExtractAssociatedIcon(dllPath);
+            return icon;
 
-            // Lấy icon từ DLL
-            IntPtr hIcon = LoadIcon(hLibrary, new IntPtr(iconIndex));
-            if (hIcon == IntPtr.Zero)
-            {
-                throw new Exception("Không tìm thấy biểu tượng trong DLL.");
-            }
-
-            return Icon.FromHandle(hIcon);
         }
+        #endregion
         public static void SignPdfWithPkcs11(string pdfPath, string signedPdfPath, byte[] signature, X509Certificate2 certificate)
         {
 
@@ -210,11 +191,9 @@ namespace SignTinDuc
             {
                 // Tạo đối tượng PdfSigner để xử lý ký số
                 PdfSigner pdfSigner = new PdfSigner(pdfReader, outputStream, new StampingProperties());
-
                 IExternalSignature pks = new ExternalBlankSignature(signature, "RSA", "SHA-256");
                 IExternalDigest digest = new BouncyCastleDigest();
 
-                // Chuyển đổi X509Certificate2 của .NET thành BouncyCastle X509Certificate
                 Org.BouncyCastle.X509.X509Certificate bouncyCert = ConvertToBouncyCastleCertificate(certificate);
 
                 // Chuyển đổi thành iText IX509Certificate
@@ -223,22 +202,22 @@ namespace SignTinDuc
                 float y = 842 - 50;  // Vị trí Y, 842 là chiều cao của A4, 50 là chiều cao chữ ký
                 float width = 150;   // Chiều rộng chữ ký
                 float height = 50;   // Chiều cao chữ ký
-                string baseDirectory = Directory.GetParent(AppDomain.CurrentDomain.BaseDirectory).Parent.Parent.FullName;
-                string fontPath = Path.Combine(baseDirectory, "TIMES.ttf");
+                string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIMES.ttf");
                 //string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "TIMES.ttf");
                 PdfFont font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
 
                 IX509Certificate[] certChain = new IX509Certificate[] { iTextCert };
                 PdfSignatureAppearance signatureAppearance = pdfSigner.GetSignatureAppearance()
-                                                                    .SetPageRect(new iText.Kernel.Geom.Rectangle(x, y, width, height))
+                                                                   .SetPageRect(new iText.Kernel.Geom.Rectangle(x, y, width, height))
                                                                    .SetReason("Digital signature")
                                                                    .SetLocation("Location")
-                .SetLayer2Font(font)
+                                                                   .SetLayer2Font(font)
                                                                    ;
                 pdfSigner.SetCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
-                ITSAClient tsaClient = new TSAClientBouncyCastle("http://tsa.ca.gov.vn");
+                //ITSAClient tsaClient = new TSAClientBouncyCastle("http://tsa.ca.gov.vn");
                 // Ký số file PDF
-                pdfSigner.SignDetached(digest, pks, certChain, null, null, tsaClient, 0, PdfSigner.CryptoStandard.CADES);
+                //pdfSigner.SignDetached(digest, pks, certChain, null, null, tsaClient, 0, PdfSigner.CryptoStandard.CADES);
+                pdfSigner.SignDetached(digest, pks, certChain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
             }
         }
         public static void SignXmlDocument(string xmlFilePath, string signedXmlFilePath, byte[] signature, X509Certificate2 certificate)
@@ -334,49 +313,12 @@ namespace SignTinDuc
             //xmlDoc.Save(signedXmlFilePath);
             Console.WriteLine("XML file signed successfully.");
         }
+        #region Chuyển đổi X509Certificate2 của .NET thành BouncyCastle X509Certificate
         public static Org.BouncyCastle.X509.X509Certificate ConvertToBouncyCastleCertificate(X509Certificate2 cert)
         {
             var certParser = new X509CertificateParser();
             return certParser.ReadCertificate(cert.RawData);
         }
-        public void VerifyPdfSignature(string pdfPath)
-        {
-            // Đọc tài liệu PDF đã ký
-            using (PdfReader pdfReader = new PdfReader(pdfPath))
-            using (PdfDocument pdfDoc = new PdfDocument(pdfReader))
-            {
-                // Lấy đối tượng PdfAcroForm để truy xuất các trường trong PDF
-                var acroForm = PdfAcroForm.GetAcroForm(pdfDoc, false);
-                var fieldNames = acroForm.GetAllFormFields().Keys;
-
-                // Kiểm tra từng trường và xác định nếu nó là một chữ ký
-                foreach (var fieldName in fieldNames)
-                {
-                    Console.WriteLine("Field Name: " + fieldName);
-
-                    // Nếu trường là chữ ký, xác minh chữ ký đó
-                    //if (acroForm.GetField(fieldName).GetFormType() == PdfFormField.FORM_TYPE_SIGNATURE)
-                    //{
-                    //PdfSignature signature = pdfDoc.Get(fieldName);
-                    //Console.WriteLine("Signature found in field: " + fieldName);
-
-                    // Lấy chứng chỉ của người ký
-                    //var signerCert = signature.GetSignerCertificate();
-                    //Console.WriteLine("Signer Certificate: " + signerCert.SubjectDN);
-                    //Console.WriteLine("Signature Algorithm: " + signature.GetSignatureAlgorithm());
-                    //Console.WriteLine("Digest Algorithm: " + signature.GetDigestAlgorithm());
-
-                    //// Kiểm tra tính hợp lệ của chữ ký
-                    //bool isValid = signature.VerifySignature();
-                    //Console.WriteLine("Signature is valid: " + isValid);
-                    //}
-                }
-            }
-        }
-
-    }
-    public class SmartCardSlot
-    {
-        public string TokenSerial { get; set; }
+        #endregion
     }
 }

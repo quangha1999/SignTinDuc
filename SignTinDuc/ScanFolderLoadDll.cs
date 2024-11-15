@@ -9,7 +9,7 @@ namespace SignTinDuc
 {
     public class ScanFolderLoadDll
     {
-        public static List<string> FindPKCS11DLLs(string data,string[] arrData)
+        public static List<string> FindPKCS11DLLs(string[] arrData)
         {
             string listDLL = arrData[1];
             List<string> dllPaths = new List<string>();

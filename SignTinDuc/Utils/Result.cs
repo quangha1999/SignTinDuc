@@ -8,6 +8,7 @@ namespace SignTinDuc
 {
     public class Result
     {
+        public Result() { }
         public Result(int status, object obj, bool isOk, bool isError)
         {
             this.Status = status;

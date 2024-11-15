@@ -17,5 +17,6 @@ namespace SignTinDuc
         ERROR_INPUT = -1, // 0xFFFFFFFF
         OK = 0,
         ERROR = 1,
+        
     }
 }
