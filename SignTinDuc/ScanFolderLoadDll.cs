@@ -11,13 +11,18 @@ namespace SignTinDuc
     {
         public static List<string> FindPKCS11DLLs(string[] arrData)
         {
-            string listDLL = arrData[1];
+           
             List<string> dllPaths = new List<string>();
             // Tìm kiếm trong thư mục hệ thống
-            dllPaths.AddRange(FindDLLsInSystemFolders(listDLL));
+            foreach (string dll in arrData) {
+                dllPaths.AddRange(FindDLLsInSystemFolders(dll));
+            }
             // Loại bỏ các đường dẫn trùng lặp
-            dllPaths = dllPaths.Distinct().ToList();
-            return dllPaths;
+            var uniqueDllPaths = dllPaths
+            .GroupBy(path => System.IO.Path.GetFileName(path))
+            .Select(group => group.First())
+            .ToList();
+            return uniqueDllPaths;
         }
         public static List<string> FindDLLsInSystemFolders(string listDLL)
         {

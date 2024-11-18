@@ -23,10 +23,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Signer\" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="TIMES.TTF">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

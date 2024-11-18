@@ -60,7 +60,7 @@ namespace SignTinDuc
         }
         #endregion
         #region Kiểm tra đăng nhập thiết bị ký số
-        public static Result GetUsbTokenInformation(string[] arrdata, string serial)
+        public static Result GetUsbTokenInformation(string[] arrdata, string serial, int type)
         {
             Result msg = new Result();
             string pkcs11LibPath = CheckDLLMatchUSB(arrdata, serial);
