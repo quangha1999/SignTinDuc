@@ -23,12 +23,12 @@
                 //List<string> test = ScanFolderLoadDll.FindPKCS11DLLs();
                 // Lấy thông tin chứng thư số
                 //var list =Certificate.GetListCert();
-                //AsynchronousSocketListener.StartListening();
+                AsynchronousSocketListener.StartListening();
                 //string PKCS11LibPath = @"E:\Code\PluginSign\nca_v6.dll";
                 //string PKCS11LibPath = @"E:\Code\PluginSign\fpt-ca.dll";
-                string[] path = new string[] { "nca_v6", "fpt-ca"};
+                //string[] path = new string[] { "nca_v6", "fpt-ca"};
                 //SerialNumber = "0229581114280311" 54092101054304
-                ConnectUsbToken.GetUsbTokenInformation(path, "54092101054304", (int)TypeSign.PDF);
+                //ConnectUsbToken.GetUsbTokenInformation(path, "54092101054304", (int)TypeSign.PDF);
             }
         }
     }

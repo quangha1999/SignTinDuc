@@ -182,12 +182,14 @@ namespace SignTinDuc
 
         }
         #endregion
-        public static void SignPdfWithPkcs11(string pdfPath, string signedPdfPath, byte[] signature, X509Certificate2 certificate)
+        #region Ký byte pdf
+        public static Result SignPdfWithPkcs11(byte[] pdfData, byte[] signature, X509Certificate2 certificate)
         {
 
             // Đọc file PDF gốc với PdfReader
-            using (PdfReader pdfReader = new PdfReader(pdfPath))
-            using (FileStream outputStream = new FileStream(signedPdfPath, FileMode.Create))
+            using (MemoryStream inputStream = new MemoryStream(pdfData))
+            using (PdfReader pdfReader = new PdfReader(inputStream))
+            using (MemoryStream outputStream = new MemoryStream())
             {
                 // Tạo đối tượng PdfSigner để xử lý ký số
                 PdfSigner pdfSigner = new PdfSigner(pdfReader, outputStream, new StampingProperties());
@@ -218,8 +220,58 @@ namespace SignTinDuc
                 // Ký số file PDF
                 //pdfSigner.SignDetached(digest, pks, certChain, null, null, tsaClient, 0, PdfSigner.CryptoStandard.CADES);
                 pdfSigner.SignDetached(digest, pks, certChain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
+                Result rs = new Result();
+                rs.isOk = true;
+                rs.Object = outputStream.ToArray();
+                return rs;
             }
         }
+        public static Result SignMultiPdfWithPkcs11(List<MultipleData> multipleDatas, byte[] signature, X509Certificate2 certificate)
+        {
+
+            // Đọc file PDF gốc với PdfReader
+            foreach(var bytedata in multipleDatas)
+            {
+                using (MemoryStream inputStream = new MemoryStream(bytedata.bytes))
+                using (PdfReader pdfReader = new PdfReader(inputStream))
+                using (MemoryStream outputStream = new MemoryStream())
+                {
+                    // Tạo đối tượng PdfSigner để xử lý ký số
+                    PdfSigner pdfSigner = new PdfSigner(pdfReader, outputStream, new StampingProperties());
+                    IExternalSignature pks = new ExternalBlankSignature(signature, "RSA", "SHA-256");
+                    IExternalDigest digest = new BouncyCastleDigest();
+
+                    Org.BouncyCastle.X509.X509Certificate bouncyCert = ConvertToBouncyCastleCertificate(certificate);
+
+                    // Chuyển đổi thành iText IX509Certificate
+                    IX509Certificate iTextCert = new X509CertificateBC(bouncyCert);
+                    float x = 595 - 150; // Vị trí X, 595 là chiều rộng của A4, 150 là chiều rộng chữ ký
+                    float y = 842 - 50;  // Vị trí Y, 842 là chiều cao của A4, 50 là chiều cao chữ ký
+                    float width = 150;   // Chiều rộng chữ ký
+                    float height = 50;   // Chiều cao chữ ký
+                    string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIMES.ttf");
+                    //string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "TIMES.ttf");
+                    PdfFont font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
+
+                    IX509Certificate[] certChain = new IX509Certificate[] { iTextCert };
+                    PdfSignatureAppearance signatureAppearance = pdfSigner.GetSignatureAppearance()
+                                                                       .SetPageRect(new iText.Kernel.Geom.Rectangle(x, y, width, height))
+                                                                       .SetReason("Digital signature")
+                                                                       .SetLocation("Location")
+                                                                       .SetLayer2Font(font)
+                                                                       ;
+                    pdfSigner.SetCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
+                    //ITSAClient tsaClient = new TSAClientBouncyCastle("http://tsa.ca.gov.vn");
+                    // Ký số file PDF
+                    //pdfSigner.SignDetached(digest, pks, certChain, null, null, tsaClient, 0, PdfSigner.CryptoStandard.CADES);
+                    pdfSigner.SignDetached(digest, pks, certChain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
+                }
+            }
+
+            return null;
+        }
+        #endregion
+        #region Ký byte xml
         public static void SignXmlDocument(string xmlFilePath, string signedXmlFilePath, byte[] signature, X509Certificate2 certificate)
         {
             // Tạo đối tượng XmlDocument từ file XML gốc
@@ -311,8 +363,57 @@ namespace SignTinDuc
 
             // Lưu tệp XML đã ký
             //xmlDoc.Save(signedXmlFilePath);
-            Console.WriteLine("XML file signed successfully.");
         }
+        public static void SignMultiXmlDocument(string xmlFilePath, string signedXmlFilePath, byte[] signature, X509Certificate2 certificate)
+        {
+            // Tạo đối tượng XmlDocument từ file XML gốc
+            XmlDocument xmlDoc = new XmlDocument();
+            xmlDoc.Load(xmlFilePath);
+
+            XmlElement signatureElement = xmlDoc.CreateElement("Signature", "http://www.w3.org/2000/09/xmldsig#");
+
+            XmlElement signedInfoElement = xmlDoc.CreateElement("SignedInfo", "http://www.w3.org/2000/09/xmldsig#");
+            signatureElement.AppendChild(signedInfoElement);
+
+            XmlElement canonicalizationMethod = xmlDoc.CreateElement("CanonicalizationMethod", "http://www.w3.org/2000/09/xmldsig#");
+            canonicalizationMethod.SetAttribute("Algorithm", "http://www.w3.org/TR/2001/REC-xml-c14n-20010315");
+            signedInfoElement.AppendChild(canonicalizationMethod);
+
+            XmlElement signatureMethod = xmlDoc.CreateElement("SignatureMethod", "http://www.w3.org/2000/09/xmldsig#");
+            signatureMethod.SetAttribute("Algorithm", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256");
+            signedInfoElement.AppendChild(signatureMethod);
+
+            XmlElement reference = xmlDoc.CreateElement("Reference", "http://www.w3.org/2000/09/xmldsig#");
+            reference.SetAttribute("URI", "");
+            signedInfoElement.AppendChild(reference);
+
+            XmlElement digestMethod = xmlDoc.CreateElement("DigestMethod", "http://www.w3.org/2000/09/xmldsig#");
+            digestMethod.SetAttribute("Algorithm", "http://www.w3.org/2001/04/xmlenc#sha256");
+            reference.AppendChild(digestMethod);
+
+            XmlElement digestValue = xmlDoc.CreateElement("DigestValue", "http://www.w3.org/2000/09/xmldsig#");
+            digestValue.InnerText = Convert.ToBase64String(new byte[32]);  // Placeholder value
+            reference.AppendChild(digestValue);
+
+            XmlElement signatureValueElement = xmlDoc.CreateElement("SignatureValue", "http://www.w3.org/2000/09/xmldsig#");
+            signatureValueElement.InnerText = Convert.ToBase64String(signature);
+            signatureElement.AppendChild(signatureValueElement);
+
+            XmlElement keyInfoElement = xmlDoc.CreateElement("KeyInfo", "http://www.w3.org/2000/09/xmldsig#");
+            signatureElement.AppendChild(keyInfoElement);
+
+            XmlElement x509Data = xmlDoc.CreateElement("X509Data", "http://www.w3.org/2000/09/xmldsig#");
+            keyInfoElement.AppendChild(x509Data);
+
+            XmlElement x509CertificateElement = xmlDoc.CreateElement("X509Certificate", "http://www.w3.org/2000/09/xmldsig#");
+            x509CertificateElement.InnerText = Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
+            x509Data.AppendChild(x509CertificateElement);
+
+            xmlDoc.DocumentElement.AppendChild(signatureElement);
+
+            xmlDoc.Save(signedXmlFilePath);
+        }
+        #endregion
         #region Chuyển đổi X509Certificate2 của .NET thành BouncyCastle X509Certificate
         public static Org.BouncyCastle.X509.X509Certificate ConvertToBouncyCastleCertificate(X509Certificate2 cert)
         {
