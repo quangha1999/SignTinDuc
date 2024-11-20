@@ -112,39 +112,39 @@ namespace SignTinDuc
                 // khởi tạo phương thức cho quá trình truyền nhận dữ liệu
                 string response;
                 string responseAsscesConnect = AsynchronousSocketListener.GetResponseAsscesConnect(content, out response);
-                //if (responseAsscesConnect.Length > 0)
-                //    result1 = Log.ToUMNFResultError(responseAsscesConnect, ResultStatus.ERROR_ASSCES_CONNECT, new
-                //    {
-                //        content = content
-                //    });
-                byte[] buffer = (byte[])null;
-                //if (result1 == null)
-                //{
-                //    string bytes = Convertor.GetBytes(response, out buffer);
-                //    if (bytes.Length > 0)
-                //        umnfResultError = Log.ToUMNFResultError(bytes, ResultStatus.ERROR_CONVERT_DATA, new
-                //        {
-                //            response = response
-                //        });
-                //}
-                //else
-                //{
-                //    string Message;
-                //    string json = Convertor.ObjectToJson((object)result1, out Message);
-                //    if (json.Length > 0)
-                //        result1 = Log.ToUMNFResultError(json, ResultStatus.ERROR_CONVERT_DATA, new
-                //        {
-                //            result = result1
-                //        });
-                //    string frameFromString = Convertor.GetFrameFromString(Message, out buffer);
-                //    if (frameFromString.Length > 0)
-                //        umnfResultError = Log.ToUMNFResultError(frameFromString, ResultStatus.ERROR_CONVERT_DATA, new
-                //        {
-                //            result = result1
-                //        });
-                //}
-                //if (!AsynchronousSocketListener.SocketConnected(workSocket))
-                //    return;
+                if (responseAsscesConnect.Length > 0)
+                    result1 = Log.ToUMNFResultError(responseAsscesConnect, ResultStatus.ERROR_ASSCES_CONNECT, new
+                    {
+                        content = content
+                    });
+                byte[] buffer;
+                if (result1 == null)
+                {
+                    string bytes = Convertor.GetBytes(response, out buffer);
+                    if (bytes.Length > 0)
+                        umnfResultError = Log.ToUMNFResultError(bytes, ResultStatus.ERROR_CONVERT_DATA, new
+                        {
+                            response = response
+                        });
+                }
+                else
+                {
+                    string Message;
+                    string json = Convertor.ObjectToJson((object)result1, out Message);
+                    if (json.Length > 0)
+                        result1 = Log.ToUMNFResultError(json, ResultStatus.ERROR_CONVERT_DATA, new
+                        {
+                            result = result1
+                        });
+                    string frameFromString = Convertor.GetFrameFromString(Message, out buffer);
+                    if (frameFromString.Length > 0)
+                        umnfResultError = Log.ToUMNFResultError(frameFromString, ResultStatus.ERROR_CONVERT_DATA, new
+                        {
+                            result = result1
+                        });
+                }
+                if (!AsynchronousSocketListener.SocketConnected(workSocket))
+                    return;
                 workSocket.Send(buffer);
             }
             workSocket.BeginReceive(asyncState.buffer, 0, 10240, SocketFlags.None, new AsyncCallback(AsynchronousSocketListener.ReadCallback), (object)asyncState);
