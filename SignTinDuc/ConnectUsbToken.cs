@@ -19,14 +19,8 @@ namespace SignTinDuc
 {
     public class ConnectUsbToken
     {
-        //static string PKCS11LibPath = @"E:\Code\PluginSign\nca_v6.dll";
-        static string PKCS11LibPath = @"E:\Code\PluginSign\fpt-ca.dll";
-        static string filePath = @"E:\Code\PluginSign\export-pdf-demo.pdf";
-        static string filePathSign = @"E:\Code\PluginSign\export-pdf-sign.pdf";
-        static string fileXmlPath = @"E:\Code\PluginSign\export-xml-sign.xml";
-        static string fileSignXml = @"E:\Code\PluginSign\export-xml-sign-g.xml";
         #region Kiểm tra lấy DLL tương ứng với thiết bị
-        public static string CheckDLLMatchUSB(string[] arrData, string serial)
+        public static string CheckDLLMatchUSB(string arrData, string serial)
         {
             var lstDLL = ScanFolderLoadDll.FindPKCS11DLLs(arrData);
             string pathDLL = "";
@@ -60,11 +54,12 @@ namespace SignTinDuc
         }
         #endregion
         #region Kiểm tra đăng nhập thiết bị ký số
-        public static Result GetUsbTokenInformation(string[] arrdata, string serial, int type)
+        public static Result GetUsbTokenInformation(string[] arrdata)
         {
+            // arr1: Dll , arr2: serial thiết bị 
             Result msg = new Result();
-            string pkcs11LibPath = CheckDLLMatchUSB(arrdata, serial);
-            if (PKCS11LibPath == "")
+            string pkcs11LibPath = CheckDLLMatchUSB(arrdata[1], arrdata[2]);
+            if (pkcs11LibPath == "")
             {
                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true);
             }
@@ -115,8 +110,8 @@ namespace SignTinDuc
                                         {
                                             var privateKeyHandle = privateKeyHandles[0];
                                             // Đọc nội dung file cần ký
-                                            byte[] data = File.ReadAllBytes(filePath);
-                                            byte[] hash = ComputeSha256Hash(data);
+                                            //byte[] data = File.ReadAllBytes(filePath);
+                                            //byte[] hash = ComputeSha256Hash(data);
                                             //Lấy dữ liệu của chứng chỉ
                                             byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
                                             //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
@@ -126,7 +121,7 @@ namespace SignTinDuc
                                             {
                                                 var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
                                                 // chữ ký
-                                                byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
+                                                //byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
                                                 //SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
                                                 //SignXmlDocument(fileXmlPath, fileSignXml, signature, certificate);
                                                 session.Logout();
@@ -272,97 +267,54 @@ namespace SignTinDuc
         }
         #endregion
         #region Ký byte xml
-        public static void SignXmlDocument(string xmlFilePath, string signedXmlFilePath, byte[] signature, X509Certificate2 certificate)
+        public static string SignXmlDocument(string xmlFilePath, byte[] signature, X509Certificate2 certificate)
         {
-            // Tạo đối tượng XmlDocument từ file XML gốc
+            byte[] xmlBytes=Convert.FromBase64String(xmlFilePath);
             XmlDocument xmlDoc = new XmlDocument();
-            xmlDoc.Load(xmlFilePath);
-
-            // Create the Signature XML element
+            xmlDoc.LoadXml(Encoding.UTF8.GetString(xmlBytes));
+           
             XmlElement signatureElement = xmlDoc.CreateElement("Signature", "http://www.w3.org/2000/09/xmldsig#");
 
-            // Create the SignedInfo element
             XmlElement signedInfoElement = xmlDoc.CreateElement("SignedInfo", "http://www.w3.org/2000/09/xmldsig#");
             signatureElement.AppendChild(signedInfoElement);
-
-            // Create and append the CanonicalizationMethod element
+          
             XmlElement canonicalizationMethod = xmlDoc.CreateElement("CanonicalizationMethod", "http://www.w3.org/2000/09/xmldsig#");
             canonicalizationMethod.SetAttribute("Algorithm", "http://www.w3.org/TR/2001/REC-xml-c14n-20010315");
             signedInfoElement.AppendChild(canonicalizationMethod);
 
-            // Create and append the SignatureMethod element
             XmlElement signatureMethod = xmlDoc.CreateElement("SignatureMethod", "http://www.w3.org/2000/09/xmldsig#");
             signatureMethod.SetAttribute("Algorithm", "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256");
             signedInfoElement.AppendChild(signatureMethod);
 
-            // Create and append the Reference element
             XmlElement reference = xmlDoc.CreateElement("Reference", "http://www.w3.org/2000/09/xmldsig#");
             reference.SetAttribute("URI", "");
             signedInfoElement.AppendChild(reference);
 
-            // Create and append the DigestMethod element
             XmlElement digestMethod = xmlDoc.CreateElement("DigestMethod", "http://www.w3.org/2000/09/xmldsig#");
             digestMethod.SetAttribute("Algorithm", "http://www.w3.org/2001/04/xmlenc#sha256");
             reference.AppendChild(digestMethod);
 
-            // Create and append the DigestValue element (Dummy value, you can replace it as per your requirement)
             XmlElement digestValue = xmlDoc.CreateElement("DigestValue", "http://www.w3.org/2000/09/xmldsig#");
-            digestValue.InnerText = Convert.ToBase64String(new byte[32]);  // Placeholder value
+            digestValue.InnerText = Convert.ToBase64String(new byte[32]); 
             reference.AppendChild(digestValue);
 
-            // Append the SignatureValue element
             XmlElement signatureValueElement = xmlDoc.CreateElement("SignatureValue", "http://www.w3.org/2000/09/xmldsig#");
             signatureValueElement.InnerText = Convert.ToBase64String(signature);
             signatureElement.AppendChild(signatureValueElement);
 
-            // Create and append the KeyInfo element
             XmlElement keyInfoElement = xmlDoc.CreateElement("KeyInfo", "http://www.w3.org/2000/09/xmldsig#");
             signatureElement.AppendChild(keyInfoElement);
 
-            // Create and append the X509Data element
             XmlElement x509Data = xmlDoc.CreateElement("X509Data", "http://www.w3.org/2000/09/xmldsig#");
             keyInfoElement.AppendChild(x509Data);
 
-            // Add the certificate
             XmlElement x509CertificateElement = xmlDoc.CreateElement("X509Certificate", "http://www.w3.org/2000/09/xmldsig#");
             x509CertificateElement.InnerText = Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
             x509Data.AppendChild(x509CertificateElement);
 
-            // Append the Signature element to the XML document
             xmlDoc.DocumentElement.AppendChild(signatureElement);
 
-            // Save the signed XML document to a file
-            xmlDoc.Save(signedXmlFilePath);
-
-
-
-
-            //// Tạo đối tượng SignedXml từ XmlDocument
-            //SignedXml signedXml = new SignedXml(xmlDoc);
-
-            //signedXml.SigningKey = certificate.GetRSAPublicKey();
-            //signedXml.SignedInfo.SignatureMethod = SignedXml.XmlDsigRSASHA256Url;
-
-            //signedXml.Signature.SignatureValue = signature;
-            //// Tạo đối tượng Reference để chỉ định phần tử XML sẽ được ký
-            //Reference reference = new Reference();
-            //reference.Uri = "";
-            //// Tạo đối tượng CanonicalizationMethod và SignatureMethod
-            //reference.AddTransform(new XmlDsigEnvelopedSignatureTransform());
-            //signedXml.AddReference(reference);
-            //reference.DigestMethod = SignedXml.XmlDsigSHA256Url;
-            //// Thêm thông tin chứng chỉ vào phần KeyInfo (để người nhận có thể kiểm tra chữ ký)
-            //KeyInfo keyInfo = new KeyInfo();
-            //keyInfo.AddClause(new KeyInfoX509Data(certificate)); // Lấy chứng chỉ từ session hoặc handle
-            //signedXml.KeyInfo = keyInfo;
-
-
-            //// Thêm chữ ký vào XML
-            //XmlElement xmlSignature = signedXml.GetXml();
-            //xmlDoc.DocumentElement.AppendChild(xmlDoc.ImportNode(xmlSignature, true));
-
-            // Lưu tệp XML đã ký
-            //xmlDoc.Save(signedXmlFilePath);
+            return xmlDoc.OuterXml;
         }
         public static void SignMultiXmlDocument(string xmlFilePath, string signedXmlFilePath, byte[] signature, X509Certificate2 certificate)
         {

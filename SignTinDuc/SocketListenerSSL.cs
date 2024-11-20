@@ -122,31 +122,16 @@ namespace SignTinDuc
             try
             {
                 Console.WriteLine("Process Plugin: " + result);
-                // lấy ra danh sách các thao tác 
-                // 1: kết nối
-                // danh sách mã dll từ phía server web ex: vnpt,ncs_6,fpt_ca,.....
-                // từ phía client lấy ra các dll quét được trong system32, program file x86
-                // sau khi client quét đc file dll => mở popup nhập mật khẩu tiến hành đọc thông tin thiết bị usbtoken(cứ lặp qua các dll cái nào dùng được thì lưu lại) 
-                // lấy file certificate của thiết bị kết nối kiểm tra hạn và cảnh báo người dùng
-                // 2: ký số
-                // kết nối trước đấy đã được lưu 1 lần vào file tạm
-                // giả sử cắm 2, 3 thiết bị ?? => trên web đã phải truyền vào thông tin thiết bị ký số xuống client (mã thiết bị) 
-                // mỗi lần muốn ký sẽ phải nhập thông tin password
-                // 3: trước đấy đã kết nối và quá trình kết nối này vẫn còn
-                // khi mà ký số =>
-
-
-
 
                 switch (result)
                 {
-                    // 1. kết nối đến usbtoken 
+                    // 1. Kiểm tra kết nối đến usbtoken 
                     case 1:
                     //Log.WriteActivityLog("Connect usb token");
-                    //return ScanFolderLoadDll.FindPKCS11DLLs(data, arrData);
+                    return ConnectUsbToken.GetUsbTokenInformation(arrData);
                     // 2. ký pdf
                     case 2:
-                    //return PDFSigner.SignFilePDF(data, arrData);
+                    //return ConnectUsbToken.SignXmlDocument(data, arrData);
                     // 3. ký xml
                     case 3:
                     //return Certificate.GetCertBySerial(data, arrData);
@@ -161,7 +146,7 @@ namespace SignTinDuc
                     //return XMLSigner.SignFileXML(data, arrData);
                     // 6: ký nhiều file pdf
                     case 7:
-                    //return ResultStatic.ResultOk((object)"1.0.52124");
+                        return Certificate.GetListCert();
                     default:
                         return Log.ToUMNFResultError("No define function", ResultStatus.ERROR_INPUT, new
                         {

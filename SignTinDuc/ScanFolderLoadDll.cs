@@ -9,12 +9,13 @@ namespace SignTinDuc
 {
     public class ScanFolderLoadDll
     {
-        public static List<string> FindPKCS11DLLs(string[] arrData)
+        public static List<string> FindPKCS11DLLs(string arrData)
         {
            
             List<string> dllPaths = new List<string>();
+            string[] arr= arrData.Split(',');
             // Tìm kiếm trong thư mục hệ thống
-            foreach (string dll in arrData) {
+            foreach (string dll in arr) {
                 dllPaths.AddRange(FindDLLsInSystemFolders(dll));
             }
             // Loại bỏ các đường dẫn trùng lặp
