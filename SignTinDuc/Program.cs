@@ -18,6 +18,8 @@
             else
             {
                 SocketListenerSSL.ConnectListener();
+                // Đảm bảo ứng dụng không kết thúc ngay
+                Thread.Sleep(Timeout.Infinite);
             }
         }
     }

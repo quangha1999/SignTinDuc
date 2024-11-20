@@ -15,13 +15,6 @@ namespace SignTinDuc
         private static Task listenTask;
         public static void ConnectListener()
         {
-            //string certPath = "E:\\SourceCode\\SignSSL\\SignSSL\\certificate.pfx";
-            //string certPassword = "12345678";
-
-            //// Tải chứng chỉ SSL
-            //var cert = new X509Certificate2(certPath, certPassword);
-
-            // Tạo HttpListener
             listener = new HttpListener();
             listener.Prefixes.Add("http://localhost:9199/");
             listener.Start();
@@ -29,20 +22,6 @@ namespace SignTinDuc
         }
         private static async Task ListenForClients()
         {
-            //SSL
-            //while (true)
-            //{
-            //    HttpListenerContext context = listener.GetContext();
-            //    if (context.Request.IsWebSocketRequest)
-            //    {
-            //        HandleWebSocket(context, cert);
-            //    }
-            //    else
-            //    {
-            //        context.Response.StatusCode = 400;
-            //        context.Response.Close();
-            //    }
-            //}
             // NO SSL
             while (true)
             {
@@ -88,7 +67,7 @@ namespace SignTinDuc
             try
             {
                 wsContext = await context.AcceptWebSocketAsync(subProtocol: null);
-                Console.WriteLine("WebSocket connection established.");
+                Console.WriteLine("WebSocket connection .");
             }
             catch (Exception e)
             {
@@ -100,7 +79,7 @@ namespace SignTinDuc
 
             WebSocket webSocket = wsContext.WebSocket;
 
-            byte[] buffer = new byte[1024];
+            byte[] buffer = new byte[10240];
             while (webSocket.State == WebSocketState.Open)
             {
                 WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
@@ -108,18 +87,94 @@ namespace SignTinDuc
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the server", CancellationToken.None);
-                    Console.WriteLine("WebSocket connection closed.");
                 }
                 else if (result.MessageType == WebSocketMessageType.Text)
                 {
                     string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    Console.WriteLine($"Received: {message}");
+                    // xử lý theo mã lệnh truyền vào
 
                     // Echo message back to client
-                    string response = $"Server: {message}";
+                    string response = message;
                     byte[] responseBytes = Encoding.UTF8.GetBytes(response);
                     await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), WebSocketMessageType.Text, true, CancellationToken.None);
                 }
+            }
+        }
+        #endregion
+        #region xử lý nghiệp vụ
+        private static Result ProcessorPlugin(byte[] buffer, int bytesRead)
+        {
+            string data;
+            string decodedData = Convertor.GetDecodedData(buffer, bytesRead, out data);
+            if (decodedData.Length > 0)
+                return Log.ToUMNFResultError(decodedData, ResultStatus.ERROR_INPUT);
+            Log.WriteActivityLog("Browser Sent", new
+            {
+                browserSent = data
+            });
+            string[] arrData = data.Split('*');
+            int result;
+            if (!int.TryParse(arrData[0], out result))
+                return Log.ToUMNFResultError("FuntionId must be number", ResultStatus.ERROR_INPUT, new
+                {
+                    funtionId = arrData[0]
+                });
+            try
+            {
+                Console.WriteLine("Process Plugin: " + result);
+                // lấy ra danh sách các thao tác 
+                // 1: kết nối
+                // danh sách mã dll từ phía server web ex: vnpt,ncs_6,fpt_ca,.....
+                // từ phía client lấy ra các dll quét được trong system32, program file x86
+                // sau khi client quét đc file dll => mở popup nhập mật khẩu tiến hành đọc thông tin thiết bị usbtoken(cứ lặp qua các dll cái nào dùng được thì lưu lại) 
+                // lấy file certificate của thiết bị kết nối kiểm tra hạn và cảnh báo người dùng
+                // 2: ký số
+                // kết nối trước đấy đã được lưu 1 lần vào file tạm
+                // giả sử cắm 2, 3 thiết bị ?? => trên web đã phải truyền vào thông tin thiết bị ký số xuống client (mã thiết bị) 
+                // mỗi lần muốn ký sẽ phải nhập thông tin password
+                // 3: trước đấy đã kết nối và quá trình kết nối này vẫn còn
+                // khi mà ký số =>
+
+
+
+
+                switch (result)
+                {
+                    // 1. kết nối đến usbtoken 
+                    case 1:
+                    //Log.WriteActivityLog("Connect usb token");
+                    //return ScanFolderLoadDll.FindPKCS11DLLs(data, arrData);
+                    // 2. ký pdf
+                    case 2:
+                    //return PDFSigner.SignFilePDF(data, arrData);
+                    // 3. ký xml
+                    case 3:
+                    //return Certificate.GetCertBySerial(data, arrData);
+                    // 4: thông tin thiết bị
+                    case 4:
+                    //return Certificate.GetListCert();
+                    // 5: ký nhiều file xml
+                    case 5:
+                    //return XMLSigner.SignFileXML(data, arrData);
+                    // 6: ký nhiều file pdf
+                    case 6:
+                    //return XMLSigner.SignFileXML(data, arrData);
+                    // 6: ký nhiều file pdf
+                    case 7:
+                    //return ResultStatic.ResultOk((object)"1.0.52124");
+                    default:
+                        return Log.ToUMNFResultError("No define function", ResultStatus.ERROR_INPUT, new
+                        {
+                            funtionId = result
+                        });
+                }
+            }
+            catch (Exception ex)
+            {
+                return Log.ToUMNFResultError(ex.ToString(), ResultStatus.ERROR, new
+                {
+                    browserSent = data
+                });
             }
         }
         #endregion
