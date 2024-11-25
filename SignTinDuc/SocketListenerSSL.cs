@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -13,6 +14,7 @@ namespace SignTinDuc
     {
         private static HttpListener listener;
         private static Task listenTask;
+       
         public static void ConnectListener()
         {
             listener = new HttpListener();
@@ -92,9 +94,16 @@ namespace SignTinDuc
                 {
                     string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     // xử lý theo mã lệnh truyền vào
+                    if (message != "")
+                    {
 
-                    // Echo message back to client
-                    string response = message;
+                    }
+                    switch (result)
+                    {
+                        
+                    }
+                  // Echo message back to client
+                  string response = message;
                     byte[] responseBytes = Encoding.UTF8.GetBytes(response);
                     await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), WebSocketMessageType.Text, true, CancellationToken.None);
                 }
@@ -127,17 +136,16 @@ namespace SignTinDuc
                 {
                     // 1. Kiểm tra kết nối đến usbtoken 
                     case 1:
-                    //Log.WriteActivityLog("Connect usb token");
-                    return ConnectUsbToken.GetUsbTokenInformation(arrData);
-                    // 2. ký pdf
+                        return ConnectUsbToken.GetUsbTokenInformation(arrData);
+                    // 2. Lấy danh sách chứng thư số
                     case 2:
-                    //return ConnectUsbToken.SignXmlDocument(data, arrData);
-                    // 3. ký xml
+                        return Certificate.GetListCert();
+                    // 3. ký pdf
                     case 3:
-                    //return Certificate.GetCertBySerial(data, arrData);
-                    // 4: thông tin thiết bị
+                        return ConnectUsbToken.SignPdfUsbToken(arrData);
+                    // 4: ký xml
                     case 4:
-                    //return Certificate.GetListCert();
+                        return ConnectUsbToken.SignXmlUsbToken(arrData);
                     // 5: ký nhiều file xml
                     case 5:
                     //return XMLSigner.SignFileXML(data, arrData);
