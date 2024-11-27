@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -85,7 +86,7 @@ namespace SignTinDuc
             while (webSocket.State == WebSocketState.Open)
             {
                 WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-
+              
                 if (result.MessageType == WebSocketMessageType.Close)
                 {
                     await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the server", CancellationToken.None);
@@ -94,58 +95,42 @@ namespace SignTinDuc
                 {
                     string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     // xử lý theo mã lệnh truyền vào
+                    var rss = new Result();
                     if (message != "")
                     {
+                        var res= JsonConvert.DeserializeObject<DataJson>(message);
+                        rss=ProcessorPlugin(res);
 
                     }
-                    switch (result)
-                    {
-                        
-                    }
-                  // Echo message back to client
-                  string response = message;
-                    byte[] responseBytes = Encoding.UTF8.GetBytes(response);
+
+                    // Echo message back to client
+                    byte[] responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(rss));
                     await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), WebSocketMessageType.Text, true, CancellationToken.None);
                 }
             }
         }
         #endregion
         #region xử lý nghiệp vụ
-        private static Result ProcessorPlugin(byte[] buffer, int bytesRead)
+        private static Result ProcessorPlugin(DataJson jsondata)
         {
-            string data;
-            string decodedData = Convertor.GetDecodedData(buffer, bytesRead, out data);
-            if (decodedData.Length > 0)
-                return Log.ToUMNFResultError(decodedData, ResultStatus.ERROR_INPUT);
-            Log.WriteActivityLog("Browser Sent", new
-            {
-                browserSent = data
-            });
-            string[] arrData = data.Split('*');
-            int result;
-            if (!int.TryParse(arrData[0], out result))
-                return Log.ToUMNFResultError("FuntionId must be number", ResultStatus.ERROR_INPUT, new
-                {
-                    funtionId = arrData[0]
-                });
             try
             {
-                Console.WriteLine("Process Plugin: " + result);
+                //Console.WriteLine("Process Plugin: " + result);
 
-                switch (result)
+                switch (jsondata.action)
                 {
                     // 1. Kiểm tra kết nối đến usbtoken 
                     case 1:
-                        return ConnectUsbToken.GetUsbTokenInformation(arrData);
+                        //return ConnectUsbToken.GetUsbTokenInformation(arrData);
                     // 2. Lấy danh sách chứng thư số
                     case 2:
                         return Certificate.GetListCert();
                     // 3. ký pdf
-                    case 3:
-                        return ConnectUsbToken.SignPdfUsbToken(arrData);
-                    // 4: ký xml
                     case 4:
-                        return ConnectUsbToken.SignXmlUsbToken(arrData);
+                        //return ConnectUsbToken.SignPdfUsbToken(arrData);
+                    // 4: ký xml
+                    case 3:
+                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll,jsondata.serial,jsondata.data);
                     // 5: ký nhiều file xml
                     case 5:
                     //return XMLSigner.SignFileXML(data, arrData);
@@ -158,7 +143,7 @@ namespace SignTinDuc
                     default:
                         return Log.ToUMNFResultError("No define function", ResultStatus.ERROR_INPUT, new
                         {
-                            funtionId = result
+                            funtionId = ""
                         });
                 }
             }
@@ -166,9 +151,18 @@ namespace SignTinDuc
             {
                 return Log.ToUMNFResultError(ex.ToString(), ResultStatus.ERROR, new
                 {
-                    browserSent = data
+                    browserSent = ""
                 });
             }
+        }
+        #endregion
+        #region 
+        public class DataJson
+        {
+            public int action { get; set; }
+            public string? dll { get; set; }
+            public string? serial { get; set; }
+            public string? data { get; set; }
         }
         #endregion
     }
