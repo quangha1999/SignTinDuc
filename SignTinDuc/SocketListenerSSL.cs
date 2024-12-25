@@ -130,7 +130,7 @@ namespace SignTinDuc
                         //return ConnectUsbToken.SignPdfUsbToken(arrData);
                     // 4: ký xml
                     case 3:
-                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll,jsondata.serial,jsondata.data);
+                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll,jsondata.serial,jsondata.data,jsondata.messageId);
                     // 5: ký nhiều file xml
                     case 5:
                     //return XMLSigner.SignFileXML(data, arrData);
@@ -163,6 +163,7 @@ namespace SignTinDuc
             public string? dll { get; set; }
             public string? serial { get; set; }
             public string? data { get; set; }
+            public string? messageId {  get; set; }
         }
         #endregion
     }
