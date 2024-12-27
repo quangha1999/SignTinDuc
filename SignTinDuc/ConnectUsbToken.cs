@@ -706,6 +706,7 @@ namespace SignTinDuc
                                         {
                                             var privateKeyHandle = privateKeyHandles[0];
                                             // Đọc nội dung file cần ký
+
                                             byte[] data = Convert.FromBase64String(dataBase64);
                                             byte[] hash = ComputeSha256Hash(data);
                                             //Lấy dữ liệu của chứng chỉ

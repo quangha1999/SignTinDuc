@@ -82,31 +82,51 @@ namespace SignTinDuc
 
             WebSocket webSocket = wsContext.WebSocket;
 
-            byte[] buffer = new byte[10240];
-            while (webSocket.State == WebSocketState.Open)
+            byte[] buffer = new byte[1024 * 8];
+            StringBuilder receivedMessage = new StringBuilder();
+
+            try
             {
-                WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-              
-                if (result.MessageType == WebSocketMessageType.Close)
+                while (webSocket.State == WebSocketState.Open)
                 {
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the server", CancellationToken.None);
-                }
-                else if (result.MessageType == WebSocketMessageType.Text)
-                {
-                    string message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    // xử lý theo mã lệnh truyền vào
-                    var rss = new Result();
-                    if (message != "")
+                    WebSocketReceiveResult result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        var res= JsonConvert.DeserializeObject<DataJson>(message);
-                        rss=ProcessorPlugin(res);
-
+                        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the server", CancellationToken.None);
+                     
                     }
+                    else if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        // Lưu dữ liệu đã nhận vào StringBuilder để ghép nối nếu nhận dữ liệu phân mảnh
+                        receivedMessage.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
 
-                    // Echo message back to client
-                    byte[] responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(rss));
-                    await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+                        // Kiểm tra nếu đã nhận hết thông điệp
+                        if (result.EndOfMessage)
+                        {
+                            string message = receivedMessage.ToString();
+                            
+                            // Xử lý theo mã lệnh truyền vào
+                            var rss = new Result();
+                            if (!string.IsNullOrEmpty(message))
+                            {
+                                var res = JsonConvert.DeserializeObject<DataJson>(message);
+                                rss = ProcessorPlugin(res);
+                            }
+
+                            // Echo message back to client
+                            byte[] responseBytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(rss));
+                            await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+
+                            // Reset StringBuilder để nhận dữ liệu tiếp theo
+                            receivedMessage.Clear();
+                        }
+                    }
                 }
+            }
+            catch (Exception e)
+            {
+                await webSocket.CloseAsync(WebSocketCloseStatus.InternalServerError, "Lỗi websocket", CancellationToken.None);
             }
         }
         #endregion
