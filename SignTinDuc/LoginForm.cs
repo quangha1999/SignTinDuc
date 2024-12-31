@@ -1,4 +1,7 @@
-﻿namespace SignTinDuc
+﻿using iText.Commons.Utils;
+using System.Runtime.InteropServices;
+
+namespace SignTinDuc
 {
     public partial class LoginForm : Form
     {
@@ -17,7 +20,6 @@
 
         private void LoginForm_Load(object sender, EventArgs e)
         {
-
         }
         public static string GetPassword(Icon icon, string model)
         {
@@ -34,6 +36,11 @@
         {
             this.DialogResult = DialogResult.Cancel;
             this.Close();
+        }
+
+        private void LoginForm_Activated(object sender, EventArgs e)
+        {
+            this.TopMost = true;
         }
     }
 }

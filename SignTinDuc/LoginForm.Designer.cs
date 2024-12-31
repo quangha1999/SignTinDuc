@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(LoginForm));
             txtPassword = new TextBox();
             label1 = new Label();
@@ -37,6 +38,7 @@
             pictureIcon = new PictureBox();
             lblModel = new Label();
             label3 = new Label();
+            notifyIcon1 = new NotifyIcon(components);
             ((System.ComponentModel.ISupportInitialize)pictureIcon).BeginInit();
             SuspendLayout();
             // 
@@ -65,7 +67,7 @@
             btnLogin.Name = "btnLogin";
             btnLogin.Size = new Size(106, 33);
             btnLogin.TabIndex = 3;
-            btnLogin.Text = "Ký số";
+            btnLogin.Text = "Đồng ý";
             btnLogin.UseVisualStyleBackColor = true;
             btnLogin.Click += btnLogin_Click;
             // 
@@ -119,6 +121,11 @@
             label3.TabIndex = 8;
             label3.Text = "Thiết bị :";
             // 
+            // notifyIcon1
+            // 
+            notifyIcon1.Text = "notifyIcon1";
+            notifyIcon1.Visible = true;
+            // 
             // LoginForm
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -139,6 +146,7 @@
             Name = "LoginForm";
             StartPosition = FormStartPosition.CenterScreen;
             Text = "Xác nhận PIN";
+            Activated += LoginForm_Activated;
             Load += LoginForm_Load;
             ((System.ComponentModel.ISupportInitialize)pictureIcon).EndInit();
             ResumeLayout(false);
@@ -155,5 +163,6 @@
         private PictureBox pictureIcon;
         private Label lblModel;
         private Label label3;
+        private NotifyIcon notifyIcon1;
     }
 }

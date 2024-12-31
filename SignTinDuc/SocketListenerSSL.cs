@@ -15,7 +15,7 @@ namespace SignTinDuc
     {
         private static HttpListener listener;
         private static Task listenTask;
-       
+
         public static void ConnectListener()
         {
             listener = new HttpListener();
@@ -94,7 +94,7 @@ namespace SignTinDuc
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by the server", CancellationToken.None);
-                     
+
                     }
                     else if (result.MessageType == WebSocketMessageType.Text)
                     {
@@ -105,7 +105,7 @@ namespace SignTinDuc
                         if (result.EndOfMessage)
                         {
                             string message = receivedMessage.ToString();
-                            
+
                             // Xử lý theo mã lệnh truyền vào
                             var rss = new Result();
                             if (!string.IsNullOrEmpty(message))
@@ -141,25 +141,25 @@ namespace SignTinDuc
                 {
                     // 1. Kiểm tra kết nối đến usbtoken 
                     case 1:
-                        //return ConnectUsbToken.GetUsbTokenInformation(arrData);
+                    //return ConnectUsbToken.GetUsbTokenInformation(arrData);
                     // 2. Lấy danh sách chứng thư số
                     case 2:
-                        return Certificate.GetListCert();
+                        return ConnectUsbToken.GetInformationDevices(jsondata.dll, jsondata.data, jsondata.messageId);
                     // 3. ký pdf
                     case 4:
-                        //return ConnectUsbToken.SignPdfUsbToken(arrData);
+                    //return ConnectUsbToken.SignPdfUsbToken(arrData);
                     // 4: ký xml
                     case 3:
-                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll,jsondata.serial,jsondata.data,jsondata.messageId);
+                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll, jsondata.serial, jsondata.data, jsondata.messageId);
                     // 5: ký nhiều file xml
                     case 5:
-                    //return XMLSigner.SignFileXML(data, arrData);
+                        return ConnectUsbToken.SignMultipleFileXML(jsondata.dll, jsondata.serial, jsondata.data, jsondata.messageId);
                     // 6: ký nhiều file pdf
                     case 6:
                     //return XMLSigner.SignFileXML(data, arrData);
                     // 6: ký nhiều file pdf
                     case 7:
-                        return Certificate.GetListCert();
+                    //return Certificate.GetListCert();
                     default:
                         return Log.ToUMNFResultError("No define function", ResultStatus.ERROR_INPUT, new
                         {
@@ -183,7 +183,7 @@ namespace SignTinDuc
             public string? dll { get; set; }
             public string? serial { get; set; }
             public string? data { get; set; }
-            public string? messageId {  get; set; }
+            public string? messageId { get; set; }
         }
         #endregion
     }
