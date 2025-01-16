@@ -150,10 +150,10 @@ namespace SignTinDuc
                     //return ConnectUsbToken.SignPdfUsbToken(arrData);
                     // 4: ký xml
                     case 3:
-                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll, jsondata.serial, jsondata.data, jsondata.messageId);
+                        return ConnectUsbToken.SignXmlUsbToken(jsondata.dll, jsondata.serial, jsondata.data,jsondata.imageSign, jsondata.messageId);
                     // 5: ký nhiều file xml
                     case 5:
-                        return ConnectUsbToken.SignMultipleFileXML(jsondata.dll, jsondata.serial, jsondata.data, jsondata.messageId);
+                        return ConnectUsbToken.SignMultipleFileXML(jsondata.dll, jsondata.serial, jsondata.data, jsondata.imageSign, jsondata.messageId);
                     // 6: ký nhiều file pdf
                     case 6:
                     //return XMLSigner.SignFileXML(data, arrData);
@@ -184,6 +184,7 @@ namespace SignTinDuc
             public string? serial { get; set; }
             public string? data { get; set; }
             public string? messageId { get; set; }
+            public string? imageSign { get; set; }
         }
         #endregion
     }
