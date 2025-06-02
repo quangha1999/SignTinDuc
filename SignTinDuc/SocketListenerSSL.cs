@@ -147,7 +147,7 @@ namespace SignTinDuc
                         return ConnectUsbToken.GetInformationDevices(jsondata.dll, jsondata.data, jsondata.messageId);
                     // 3. ký pdf
                     case 4:
-                    //return ConnectUsbToken.SignPdfUsbToken(arrData);
+                        return ConnectUsbToken.SignPdfUsbToken(jsondata.dll, jsondata.serial, jsondata.data, jsondata.imageSign, jsondata.messageId,jsondata.jsonToaDo);
                     // 4: ký xml
                     case 3:
                         return ConnectUsbToken.SignXmlUsbToken(jsondata.dll, jsondata.serial, jsondata.data,jsondata.imageSign, jsondata.messageId);
@@ -185,6 +185,7 @@ namespace SignTinDuc
             public string? data { get; set; }
             public string? messageId { get; set; }
             public string? imageSign { get; set; }
+            public string? jsonToaDo { get; set; }
         }
         #endregion
     }

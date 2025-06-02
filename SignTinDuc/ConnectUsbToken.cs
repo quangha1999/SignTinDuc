@@ -2,13 +2,16 @@
 using iText.Commons.Bouncycastle.Cert;
 using iText.Forms;
 using iText.IO.Font;
+using iText.Kernel.Colors;
 using iText.Kernel.Font;
 using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas;
 using iText.Signatures;
 using Net.Pkcs11Interop.Common;
 using Net.Pkcs11Interop.HighLevelAPI;
 using Newtonsoft.Json;
 using Org.BouncyCastle.X509;
+using SignTinDuc.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Data.SqlTypes;
@@ -182,47 +185,68 @@ namespace SignTinDuc
         }
         #endregion
         #region Ký byte pdf
-        public static Result SignPdfWithPkcs11(byte[] pdfData, byte[] signature, X509Certificate2 certificate)
+        public static string SignPdfWithPkcs11(byte[] pdfData, byte[] signature, X509Certificate2 certificate, string jsonToaDo)
         {
-
-            // Đọc file PDF gốc với PdfReader
+            var toaDoList = JsonConvert.DeserializeObject<List<SignaturePosition>>(jsonToaDo);
             using (MemoryStream inputStream = new MemoryStream(pdfData))
-            using (PdfReader pdfReader = new PdfReader(inputStream))
+            using (PdfReader reader = new PdfReader(inputStream))
             using (MemoryStream outputStream = new MemoryStream())
             {
-                // Tạo đối tượng PdfSigner để xử lý ký số
-                PdfSigner pdfSigner = new PdfSigner(pdfReader, outputStream, new StampingProperties());
-                IExternalSignature pks = new ExternalBlankSignature(signature, "RSA", "SHA-256");
-                IExternalDigest digest = new BouncyCastleDigest();
+                PdfDocument pdfDoc = new PdfDocument(reader, new PdfWriter(outputStream));
+                pdfDoc.Close(); // tạo bản PDF copy ban đầu
+                byte[] currentPdf = outputStream.ToArray();
 
-                Org.BouncyCastle.X509.X509Certificate bouncyCert = ConvertToBouncyCastleCertificate(certificate);
+                foreach (var toaDo in toaDoList)
+                {
+                    using (MemoryStream currentStream = new MemoryStream(currentPdf))
+                    using (PdfReader curReader = new PdfReader(currentStream))
+                    using (MemoryStream updatedOutput = new MemoryStream())
+                    {
+                        PdfSigner signer = new PdfSigner(curReader, updatedOutput, new StampingProperties().UseAppendMode());
 
-                // Chuyển đổi thành iText IX509Certificate
-                IX509Certificate iTextCert = new X509CertificateBC(bouncyCert);
-                float x = 595 - 150; // Vị trí X, 595 là chiều rộng của A4, 150 là chiều rộng chữ ký
-                float y = 842 - 50;  // Vị trí Y, 842 là chiều cao của A4, 50 là chiều cao chữ ký
-                float width = 150;   // Chiều rộng chữ ký
-                float height = 50;   // Chiều cao chữ ký
-                string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIMES.ttf");
-                //string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "TIMES.ttf");
-                PdfFont font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
+                        var rect = new iText.Kernel.Geom.Rectangle((int)toaDo.x, (int)toaDo.y, (int)toaDo.width, (int)toaDo.height);
 
-                IX509Certificate[] certChain = new IX509Certificate[] { iTextCert };
-                //PdfSignatureAppearance signatureAppearance = pdfSigner.GetSignatureAppearance()
-                //                                                   .SetPageRect(new iText.Kernel.Geom.Rectangle(x, y, width, height))
-                //                                                   .SetReason("Digital signature")
-                //                                                   .SetLocation("Location")
-                //                                                   .SetLayer2Font(font)
-                //                                                   ;
-                //pdfSigner.SetCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
-                //ITSAClient tsaClient = new TSAClientBouncyCastle("http://tsa.ca.gov.vn");
-                // Ký số file PDF
-                //pdfSigner.SignDetached(digest, pks, certChain, null, null, tsaClient, 0, PdfSigner.CryptoStandard.CADES);
-                pdfSigner.SignDetached(digest, pks, certChain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
-                Result rs = new Result();
-                rs.isOk = true;
-                rs.Object = outputStream.ToArray();
-                return rs;
+
+                        // Nếu bạn cần nhúng font tùy chỉnh
+                        string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIMES.ttf");
+                        PdfFont font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
+
+                        PdfSignatureAppearance appearance = signer.GetSignatureAppearance()
+                            .SetPageNumber(toaDo.page)
+                            .SetPageRect(rect)
+                            .SetLayer2Text(toaDo.text ?? "")
+                            .SetLayer2Font(font)
+                            .SetLayer2FontSize(toaDo.fontSize)
+                            .SetReuseAppearance(false)
+                            .SetReason("Ký số văn thư")
+                            .SetLocation("Việt Nam");
+
+                        //if (!string.IsNullOrWhiteSpace(toaDo.fontColor))
+                        //{
+                        //    int r = Convert.ToInt32(toaDo.fontColor.Substring(0, 1), 16) * 17;
+                        //    int g = Convert.ToInt32(toaDo.fontColor.Substring(1, 1), 16) * 17;
+                        //    int b = Convert.ToInt32(toaDo.fontColor.Substring(2, 1), 16) * 17;
+                        //    appearance.SetLayer2TextColor(new DeviceRgb(r, g, b));
+                        //}
+                        // Vẽ nội dung Layer 2 thủ công
+                        //PdfCanvas canvas = new PdfCanvas(appearance.GetLayer2());
+                        //canvas.BeginText()
+                        //    .SetFontAndSize(font, toaDo.fontSize)
+                        //    .SetColor(new DeviceRgb(255, 0, 0), true) // đỏ chẳng hạn
+                        //    .MoveText(5, rect.GetHeight() - toaDo.fontSize - 5)
+                        //    .ShowText(toaDo.text)
+                        //    .EndText();
+                        //signer.SetFieldName($"Signature_{Guid.NewGuid()}");
+
+                        IExternalSignatureContainer external = new ExternalBlankSignatureContainer(
+                            PdfName.Adobe_PPKLite, PdfName.Adbe_pkcs7_detached);
+                        signer.SignExternalContainer(external, 8192); // tạo vùng ký 8KB
+
+                        currentPdf = updatedOutput.ToArray();
+                    }
+                }
+
+                return Convert.ToBase64String(currentPdf);
             }
         }
         public static Result SignMultiPdfWithPkcs11(List<MultipleData> multipleDatas, byte[] signature, X509Certificate2 certificate)
@@ -551,12 +575,12 @@ namespace SignTinDuc
         }
         #endregion
         #region Connect and sign pdf dùng dữ liệu dll từ TempStorage
-        public static Result SignPdfUsbToken(string[] arrdata, string messId)
+        public static Result SignPdfUsbToken(string dll, string serial, string dataBase64, string dataImageBase64, string messId,string jsontoado)
         {
             // arr1: Dll , arr2: serial thiết bị , arr3: base64 pdf
             Result msg = new Result();
             // lấy lại dll từ biển TempStorage
-            string pkcs11LibPath = CheckDLLMatchUSB(arrdata[1], arrdata[2]);
+            string pkcs11LibPath = CheckDLLMatchUSB(dll, serial);
             if (pkcs11LibPath == "")
             {
                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true, messId);
@@ -608,33 +632,35 @@ namespace SignTinDuc
                                         {
                                             var privateKeyHandle = privateKeyHandles[0];
                                             // Đọc nội dung file cần ký
-                                            //byte[] data = File.ReadAllBytes(filePath);
-                                            //byte[] hash = ComputeSha256Hash(data);
+
+                                            byte[] data = Convert.FromBase64String(dataBase64);
+                                            byte[] hash = ComputeSha256Hash(data);
                                             //Lấy dữ liệu của chứng chỉ
                                             byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
                                             //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
                                             var certificate = new X509Certificate2(certificateData);
                                             // chỉ lấy chứng thư số còn hạn sử dụng
-                                            if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
-                                            {
-                                                var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
-                                                // chữ ký
-                                                //byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
-                                                //SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
-                                                //SignXmlDocument(fileXmlPath, fileSignXml, signature, certificate);
-                                                session.Logout();
-                                                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Kết nối đến USB Token thành công.\"}"), true, true, messId);
-                                            }
-                                            else
-                                            {
-                                                session.Logout();
-                                                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true, messId);
-                                            }
+                                            //if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
+                                            //{
+                                            var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
+                                            // chữ ký
+                                            byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
+                                            //SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
+                                            string base64data = SignPdfWithPkcs11(data, signature, certificate, jsontoado);
+
+                                            msg = new Result((int)ResultStatus.OK, base64data, true, true, messId);
+                                            session.Logout();
+                                            //}
+                                            //else
+                                            //{
+                                            //  session.Logout();
+                                            //  msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true, messId);
+                                            //}
                                         }
                                         else
                                         {
                                             session.Logout();
-                                            msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy khóa cá nhân trên token\"}"), true, true, messId);
+                                            msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy khóa cá nhân trên token \"}"), true, true, messId);
                                         }
                                     }
                                     catch (Exception e)
