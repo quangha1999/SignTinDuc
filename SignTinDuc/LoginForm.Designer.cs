@@ -93,9 +93,10 @@
             // 
             // pictureIcon
             // 
-            pictureIcon.Location = new Point(32, 32);
+            pictureIcon.Image = (Image)resources.GetObject("pictureIcon.Image");
+            pictureIcon.Location = new Point(30, 32);
             pictureIcon.Name = "pictureIcon";
-            pictureIcon.Size = new Size(45, 45);
+            pictureIcon.Size = new Size(54, 44);
             pictureIcon.SizeMode = PictureBoxSizeMode.CenterImage;
             pictureIcon.TabIndex = 6;
             pictureIcon.TabStop = false;

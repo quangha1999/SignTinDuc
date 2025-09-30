@@ -15,49 +15,80 @@ using SignTinDuc.Utils;
 using System;
 using System.Collections.Concurrent;
 using System.Data.SqlTypes;
+using System.Globalization;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Cryptography.Xml;
 using System.Text;
 using System.Xml;
+using static iText.Signatures.PdfSigner;
 
 namespace SignTinDuc
 {
     public class ConnectUsbToken
     {
-        private static ConcurrentDictionary<string, string> TempStorage = new ConcurrentDictionary<string, string>();
+        private static readonly Dictionary<string, UsbTokenCacheItem> _cache = new();
         #region Kiểm tra lấy DLL tương ứng với thiết bị
-        public static string CheckDLLMatchUSB(string arrData, string serial)
+        public static UsbTokenCacheItem CheckDLLMatchUSB(string arrData, string serial)
         {
+            if (_cache.TryGetValue(serial, out var cachedItem))
+            {
+                return cachedItem;
+            }
+
+            UsbTokenCacheItem result = null;
             var lstDLL = ScanFolderLoadDll.FindPKCS11DLLs(arrData);
-            string pathDLL = "";
-            // Khởi tạo thư viện PKCS#11
+
             if (lstDLL != null && lstDLL.Count > 0)
             {
                 Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
                 foreach (string pkcs11LibPath in lstDLL)
                 {
-                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+                    using (IPkcs11Library pkcs11Library =
+                           factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
                     {
                         List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
                         if (slots != null && slots.Count > 0)
                         {
-                            // thông tin thiết bị
                             foreach (ISlot slot in slots)
                             {
                                 ITokenInfo tokenInfo = slot.GetTokenInfo();
-                                // kiểm tra seri khớp với mặc định trên web
                                 if (tokenInfo != null && tokenInfo.SerialNumber == serial)
                                 {
-                                    pathDLL = pkcs11LibPath; break;
+                                    result = new UsbTokenCacheItem
+                                    {
+                                        PathDll = pkcs11LibPath,
+                                        Serial = tokenInfo.SerialNumber,
+                                        Label = tokenInfo.Label,
+                                        Icon = GetIconFromDll(pkcs11LibPath) // hàm custom để load icon DLL
+                                    };
+
+                                    _cache[serial] = result;
+                                    break;
                                 }
                             }
                         }
-
                     }
+
+                    if (result != null)
+                        break;
                 }
             }
-            TempStorage.TryAdd("pathDLL", pathDLL);
-            return pathDLL;
+            return result;
+        }
+        // Xóa cache cho 1 serial (khi rút token)
+        public static void Remove(string serial)
+        {
+            if (_cache.ContainsKey(serial))
+                _cache.Remove(serial);
+        }
+        // Xóa toàn bộ cache
+        public static void Clear()
+        {
+            _cache.Clear();
         }
         #endregion
         #region Kiểm tra đăng nhập thiết bị ký số
@@ -65,8 +96,8 @@ namespace SignTinDuc
         {
             // arr1: Dll , arr2: serial thiết bị 
             Result msg = new Result();
-            string pkcs11LibPath = CheckDLLMatchUSB(arrdata[1], arrdata[2]);
-            if (pkcs11LibPath == "")
+            UsbTokenCacheItem usbtoken = CheckDLLMatchUSB(arrdata[1], arrdata[2]);
+            if (usbtoken.PathDll == "")
             {
                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true, mess);
             }
@@ -76,7 +107,7 @@ namespace SignTinDuc
                 Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
                 try
                 {
-                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, usbtoken.PathDll, AppType.SingleThreaded))
                     {
                         // Lấy danh sách các slot có token đang kết nối
                         List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
@@ -87,9 +118,8 @@ namespace SignTinDuc
                             ITokenInfo tokenInfo = slot.GetTokenInfo();
                             // kiểm tra cơ chế mã hóa  fpt-ca :29 , nca_v6:51 theo chuẩn này CKM_SHA1_RSA_PKCS, CKM_SHA256_RSA_PKCS
                             //var mechanisms = slot.GetMechanismList();
-                            var icon = GetIconFromDll(pkcs11LibPath, 0);
                             // Mở session và đăng nhập vào token
-                            string password = LoginForm.GetPassword(icon, tokenInfo.Model);
+                            string password = LoginForm.GetPassword(usbtoken.Icon, tokenInfo.Model);
                             if (password != null && password != "")
                             {
                                 using (ISession session = slot.OpenSession(SessionType.ReadOnly))
@@ -124,8 +154,8 @@ namespace SignTinDuc
                                             //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
                                             var certificate = new X509Certificate2(certificateData);
                                             // chỉ lấy chứng thư số còn hạn sử dụng
-                                            if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
-                                            {
+                                            //if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
+                                            //{
                                                 var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
                                                 // chữ ký
                                                 //byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
@@ -133,12 +163,12 @@ namespace SignTinDuc
                                                 //SignXmlDocument(fileXmlPath, fileSignXml, signature, certificate);
                                                 session.Logout();
                                                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Kết nối đến USB Token thành công.\"}"), true, true, mess);
-                                            }
-                                            else
-                                            {
-                                                session.Logout();
-                                                msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true, mess);
-                                            }
+                                            //}
+                                            //else
+                                            //{
+                                            //    session.Logout();
+                                            //    msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true, mess);
+                                            //}
                                         }
                                         else
                                         {
@@ -185,69 +215,58 @@ namespace SignTinDuc
         }
         #endregion
         #region Ký byte pdf
-        public static string SignPdfWithPkcs11(byte[] pdfData, byte[] signature, X509Certificate2 certificate, string jsonToaDo)
+        public static string SignPdfWithPkcs11(byte[] pdfData, byte[] signature, X509Certificate2 certificate, string jsonToaDo, ISession session, IObjectHandle privateKeyHandle)
         {
-            var toaDoList = JsonConvert.DeserializeObject<List<SignaturePosition>>(jsonToaDo);
-            using (MemoryStream inputStream = new MemoryStream(pdfData))
-            using (PdfReader reader = new PdfReader(inputStream))
-            using (MemoryStream outputStream = new MemoryStream())
+            List<SignaturePosition> toaDoList = new List<SignaturePosition>() {
+            new SignaturePosition{x= 361, y= 817,width= 220,height= 20,page= 1,text= "Sao ý bản chính",fontName= "Time",fontStyle= 0,fontSize= 10,fontColor= "000" } };
+            byte[] currentPdf = pdfData;
+
+            foreach (var toaDo in toaDoList)
             {
-                PdfDocument pdfDoc = new PdfDocument(reader, new PdfWriter(outputStream));
-                pdfDoc.Close(); // tạo bản PDF copy ban đầu
-                byte[] currentPdf = outputStream.ToArray();
-
-                foreach (var toaDo in toaDoList)
+                using (MemoryStream inputStream = new MemoryStream(currentPdf))
+                using (PdfReader reader = new PdfReader(inputStream))
+                using (MemoryStream outputStream = new MemoryStream())
                 {
-                    using (MemoryStream currentStream = new MemoryStream(currentPdf))
-                    using (PdfReader curReader = new PdfReader(currentStream))
-                    using (MemoryStream updatedOutput = new MemoryStream())
-                    {
-                        PdfSigner signer = new PdfSigner(curReader, updatedOutput, new StampingProperties().UseAppendMode());
+                    PdfSigner signer = new PdfSigner(reader, outputStream, new StampingProperties().UseAppendMode());
 
-                        var rect = new iText.Kernel.Geom.Rectangle((int)toaDo.x, (int)toaDo.y, (int)toaDo.width, (int)toaDo.height);
+                    var rect = new iText.Kernel.Geom.Rectangle((int)toaDo.x, (int)toaDo.y, (int)toaDo.width, (int)toaDo.height);
+                    //IExternalSignature pks = new ExternalBlankSignature(signature, "RSA", "SHA-256");
+                    IExternalSignature pks = new Pkcs11Signature(session, privateKeyHandle, "SHA-256");
+                    IExternalDigest digest = new BouncyCastleDigest();
 
+                    Org.BouncyCastle.X509.X509Certificate bouncyCert = ConvertToBouncyCastleCertificate(certificate);
+                    IX509Certificate iTextCert = new X509CertificateBC(bouncyCert);
+                    IX509Certificate[] certChain = new IX509Certificate[] { iTextCert };
 
-                        // Nếu bạn cần nhúng font tùy chỉnh
-                        string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIMES.ttf");
-                        PdfFont font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
+                    string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "TIMES.ttf");
+                    PdfFont font = PdfFontFactory.CreateFont(fontPath, PdfEncodings.IDENTITY_H);
+                    ITSAClient tsaClient = new TSAClientBouncyCastle("http://tsa.ca.gov.vn");
 
-                        PdfSignatureAppearance appearance = signer.GetSignatureAppearance()
-                            .SetPageNumber(toaDo.page)
-                            .SetPageRect(rect)
-                            .SetLayer2Text(toaDo.text ?? "")
-                            .SetLayer2Font(font)
-                            .SetLayer2FontSize(toaDo.fontSize)
-                            .SetReuseAppearance(false)
-                            .SetReason("Ký số văn thư")
-                            .SetLocation("Việt Nam");
+                    signer.SignDetached(digest, pks, certChain, null, null, tsaClient, 0, PdfSigner.CryptoStandard.CADES);
+                    PdfSignatureAppearance appearance = signer.GetSignatureAppearance()
+                        .SetPageNumber(toaDo.page)
+                        .SetPageRect(rect)
+                        .SetLayer2Text(toaDo.text ?? "")
+                        .SetLayer2Font(font)
+                        .SetLayer2FontSize(toaDo.fontSize)
+                        .SetReuseAppearance(false)
+                        .SetReason("Ký số văn thư")
+                        .SetLocation("Việt Nam");
 
-                        //if (!string.IsNullOrWhiteSpace(toaDo.fontColor))
-                        //{
-                        //    int r = Convert.ToInt32(toaDo.fontColor.Substring(0, 1), 16) * 17;
-                        //    int g = Convert.ToInt32(toaDo.fontColor.Substring(1, 1), 16) * 17;
-                        //    int b = Convert.ToInt32(toaDo.fontColor.Substring(2, 1), 16) * 17;
-                        //    appearance.SetLayer2TextColor(new DeviceRgb(r, g, b));
-                        //}
-                        // Vẽ nội dung Layer 2 thủ công
-                        //PdfCanvas canvas = new PdfCanvas(appearance.GetLayer2());
-                        //canvas.BeginText()
-                        //    .SetFontAndSize(font, toaDo.fontSize)
-                        //    .SetColor(new DeviceRgb(255, 0, 0), true) // đỏ chẳng hạn
-                        //    .MoveText(5, rect.GetHeight() - toaDo.fontSize - 5)
-                        //    .ShowText(toaDo.text)
-                        //    .EndText();
-                        //signer.SetFieldName($"Signature_{Guid.NewGuid()}");
+                    // Duy nhất lần đầu mới đặt cấp độ chứng thực
+                    if (toaDo == toaDoList[0])
+                        signer.SetCertificationLevel(PdfSigner.CERTIFIED_FORM_FILLING_AND_ANNOTATIONS);
+                    else
+                        signer.SetCertificationLevel(PdfSigner.NOT_CERTIFIED);
 
-                        IExternalSignatureContainer external = new ExternalBlankSignatureContainer(
-                            PdfName.Adobe_PPKLite, PdfName.Adbe_pkcs7_detached);
-                        signer.SignExternalContainer(external, 8192); // tạo vùng ký 8KB
+                  
 
-                        currentPdf = updatedOutput.ToArray();
-                    }
+                    // Cập nhật PDF hiện tại để lặp ký tiếp
+                    currentPdf = outputStream.ToArray();
                 }
-
-                return Convert.ToBase64String(currentPdf);
             }
+
+            return Convert.ToBase64String(currentPdf);
         }
         public static Result SignMultiPdfWithPkcs11(List<MultipleData> multipleDatas, byte[] signature, X509Certificate2 certificate)
         {
@@ -334,7 +353,11 @@ namespace SignTinDuc
 
             XmlElement x509Data = xmlDoc.CreateElement("X509Data", "http://www.w3.org/2000/09/xmldsig#");
             keyInfoElement.AppendChild(x509Data);
-
+            // subject name
+            XmlElement x509SubjectNameElement = xmlDoc.CreateElement("X509SubjectName", "http://www.w3.org/2000/09/xmldsig#");
+            x509SubjectNameElement.InnerText = certificate.Subject;
+            x509Data.AppendChild(x509SubjectNameElement);
+            // certificate
             XmlElement x509CertificateElement = xmlDoc.CreateElement("X509Certificate", "http://www.w3.org/2000/09/xmldsig#");
             x509CertificateElement.InnerText = Convert.ToBase64String(certificate.Export(X509ContentType.Cert));
             x509Data.AppendChild(x509CertificateElement);
@@ -349,8 +372,11 @@ namespace SignTinDuc
             signatureProperty.SetAttribute("Target", "#");
             signatureProperties.AppendChild(signatureProperty);
 
-            XmlElement signingTime = xmlDoc.CreateElement("SigningTime", "http://www.w3.org/2000/09/xmldsig#");
-            signingTime.InnerText = DateTime.UtcNow.ToString("o"); // ISO 8601 format (UTC)
+            TimeZoneInfo vnZone = TimeZoneInfo.FindSystemTimeZoneById("SE Asia Standard Time");
+            DateTime vnTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, vnZone);
+
+            XmlElement signingTime = xmlDoc.CreateElement("SigningTime", "http://example.org/#signatureProperties");
+            signingTime.InnerText = vnTime.ToString("yyyy-MM-ddTHH:mm:ssK", CultureInfo.InvariantCulture);
             signatureProperty.AppendChild(signingTime);
 
             // Add Base64 Image and Coordinates
@@ -358,31 +384,13 @@ namespace SignTinDuc
             signatureImage.InnerText = imageBase64;
             objectElement.AppendChild(signatureImage);
 
-            XmlElement signatureCoordinates = xmlDoc.CreateElement("SignatureCoordinates", "http://www.w3.org/2000/09/xmldsig#");
-            objectElement.AppendChild(signatureCoordinates);
-
-            XmlElement xCoord = xmlDoc.CreateElement("X", "http://www.w3.org/2000/09/xmldsig#");
-            xCoord.InnerText = x.ToString();
-            signatureCoordinates.AppendChild(xCoord);
-
-            XmlElement yCoord = xmlDoc.CreateElement("Y", "http://www.w3.org/2000/09/xmldsig#");
-            yCoord.InnerText = y.ToString();
-            signatureCoordinates.AppendChild(yCoord);
-
-            XmlElement widthElement = xmlDoc.CreateElement("Width", "http://www.w3.org/2000/09/xmldsig#");
-            widthElement.InnerText = width.ToString();
-            signatureCoordinates.AppendChild(widthElement);
-
-            XmlElement heightElement = xmlDoc.CreateElement("Height", "http://www.w3.org/2000/09/xmldsig#");
-            heightElement.InnerText = height.ToString();
-            signatureCoordinates.AppendChild(heightElement);
-
             signatureElement.AppendChild(objectElement);
 
             xmlDoc.DocumentElement.AppendChild(signatureElement);
 
             return xmlDoc.OuterXml;
         }
+      
         public static void SignMultiXmlDocument(string xmlFilePath, string signedXmlFilePath, byte[] signature, X509Certificate2 certificate)
         {
             // Tạo đối tượng XmlDocument từ file XML gốc
@@ -531,10 +539,24 @@ namespace SignTinDuc
                                             //{
                                             var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
                                             session.Logout();
+                                            var nic = NetworkInterface.GetAllNetworkInterfaces()
+                                                        .FirstOrDefault(n =>
+                                                            n.OperationalStatus == OperationalStatus.Up &&
+                                                            n.NetworkInterfaceType != NetworkInterfaceType.Loopback &&
+                                                            n.GetPhysicalAddress().GetAddressBytes().Length == 6);
+
+                                            string mac = nic?.GetPhysicalAddress().ToString();
+
+                                            string ip = nic?.GetIPProperties().UnicastAddresses
+                                                .FirstOrDefault(ipinfo => ipinfo.Address.AddressFamily == AddressFamily.InterNetwork)
+                                                ?.Address.ToString();
                                             var objData = new
                                             {
                                                 SerialDevice = SerialDevices,
                                                 SerialCertificate = certificate.SerialNumber,
+                                                UserToken = certificate.GetNameInfo(X509NameType.SimpleName, false),
+                                                MacAdress= mac,
+                                                IpAdress= ip,
                                                 Message = "Kết nối đến USB token thành công."
                                             };
                                             string jsonData = JsonConvert.SerializeObject(objData);
@@ -580,8 +602,8 @@ namespace SignTinDuc
             // arr1: Dll , arr2: serial thiết bị , arr3: base64 pdf
             Result msg = new Result();
             // lấy lại dll từ biển TempStorage
-            string pkcs11LibPath = CheckDLLMatchUSB(dll, serial);
-            if (pkcs11LibPath == "")
+            UsbTokenCacheItem usbtoken = CheckDLLMatchUSB(dll, serial);
+            if (usbtoken.PathDll == "")
             {
                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true, messId);
             }
@@ -591,7 +613,7 @@ namespace SignTinDuc
                 Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
                 try
                 {
-                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, usbtoken.PathDll, AppType.SingleThreaded))
                     {
                         // Lấy danh sách các slot có token đang kết nối
                         List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
@@ -602,11 +624,21 @@ namespace SignTinDuc
                             ITokenInfo tokenInfo = slot.GetTokenInfo();
                             // kiểm tra cơ chế mã hóa  fpt-ca :29 , nca_v6:51 theo chuẩn này CKM_SHA1_RSA_PKCS, CKM_SHA256_RSA_PKCS
                             //var mechanisms = slot.GetMechanismList();
-                            var icon = GetIconFromDll(pkcs11LibPath, 0);
+                            var icon = GetIconFromDll(usbtoken.PathDll, 0);
+                            string password = usbtoken.Password;
+
+                            if (string.IsNullOrEmpty(password))
+                            {
+                                // hỏi user nhập lần đầu
+                                password = LoginForm.GetPassword(usbtoken.Icon, tokenInfo.Model);
+
+                            }
                             // Mở session và đăng nhập vào token
-                            string password = LoginForm.GetPassword(icon, tokenInfo.Model);
+                            //string password = LoginForm.GetPassword(icon, tokenInfo.Model);
+
                             if (password != null && password != "")
                             {
+                                SetPassword(serial, password);
                                 using (ISession session = slot.OpenSession(SessionType.ReadOnly))
                                 {
                                     try
@@ -631,31 +663,34 @@ namespace SignTinDuc
                                         if (privateKeyHandles.Count > 0)
                                         {
                                             var privateKeyHandle = privateKeyHandles[0];
-                                            // Đọc nội dung file cần ký
 
+                                            // Dữ liệu cần ký (Base64 → byte[])
                                             byte[] data = Convert.FromBase64String(dataBase64);
-                                            byte[] hash = ComputeSha256Hash(data);
-                                            //Lấy dữ liệu của chứng chỉ
-                                            byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
-                                            //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
-                                            var certificate = new X509Certificate2(certificateData);
-                                            // chỉ lấy chứng thư số còn hạn sử dụng
-                                            //if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
-                                            //{
-                                            var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
-                                            // chữ ký
-                                            byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
-                                            //SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
-                                            string base64data = SignPdfWithPkcs11(data, signature, certificate, jsontoado);
 
-                                            msg = new Result((int)ResultStatus.OK, base64data, true, true, messId);
-                                            session.Logout();
+                                            // Lấy dữ liệu chứng chỉ từ token
+                                            byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
+                                            var certificate = new X509Certificate2(certificateData);
+
+                                            // Kiểm tra thời hạn chứng thư (nếu cần)
+                                            //if (certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
+                                            //{
+                                                // Cơ chế ký: Token sẽ tự hash bằng SHA256 và ký
+                                                var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA256_RSA_PKCS);
+
+                                                // Thực hiện ký dữ liệu gốc (không hash trước)
+                                                byte[] signature = session.Sign(mechanism, privateKeyHandle, data);
+
+                                                // Ký PDF bằng chữ ký vừa tạo + chứng chỉ
+                                                string base64data = SignPdfWithPkcs11(data, signature, certificate, jsontoado, session, privateKeyHandle);
+
+                                                msg = new Result((int)ResultStatus.OK, base64data, true, true, messId);
                                             //}
                                             //else
                                             //{
-                                            //  session.Logout();
-                                            //  msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true, messId);
+                                            //    msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Chứng thư số đã hết hiệu lực.\"}"), true, true, messId);
                                             //}
+
+                                            session.Logout();
                                         }
                                         else
                                         {
@@ -671,6 +706,7 @@ namespace SignTinDuc
                             }
                             else
                             {
+                                SetPassword(serial, null);
                                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Bạn chưa nhập mã PIN\"}"), true, true, messId);
                             }
                         }
@@ -689,9 +725,9 @@ namespace SignTinDuc
         {
             // arr1: Dll , arr2: serial thiết bị , arr3: base64 xml,
             Result msg = new Result();
-            // lấy lại dll từ biển TempStorage
-            string pkcs11LibPath = CheckDLLMatchUSB(dll, serial);
-            if (pkcs11LibPath == "")
+            // lấy từ cache
+            UsbTokenCacheItem usbtoken = CheckDLLMatchUSB(dll, serial);
+            if (usbtoken.PathDll == "")
             {
                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true, messId);
             }
@@ -701,7 +737,7 @@ namespace SignTinDuc
                 Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
                 try
                 {
-                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, usbtoken.PathDll, AppType.SingleThreaded))
                     {
                         // Lấy danh sách các slot có token đang kết nối
                         List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
@@ -712,17 +748,28 @@ namespace SignTinDuc
                             ITokenInfo tokenInfo = slot.GetTokenInfo();
                             // kiểm tra cơ chế mã hóa  fpt-ca :29 , nca_v6:51 theo chuẩn này CKM_SHA1_RSA_PKCS, CKM_SHA256_RSA_PKCS
                             //var mechanisms = slot.GetMechanismList();
-                            var icon = GetIconFromDll(pkcs11LibPath, 0);
                             // Mở session và đăng nhập vào token
-                            string password = LoginForm.GetPassword(icon, tokenInfo.Model);
+                            string password = usbtoken.Password;
+
+                            if (string.IsNullOrEmpty(password))
+                            {
+                                // hỏi user nhập lần đầu
+                                password = LoginForm.GetPassword(usbtoken.Icon, tokenInfo.Model);
+
+                            }
+                            // Mở session và đăng nhập vào token
+                            //string password = LoginForm.GetPassword(icon, tokenInfo.Model);
+
                             if (password != null && password != "")
                             {
+                                
                                 using (ISession session = slot.OpenSession(SessionType.ReadOnly))
                                 {
                                     try
                                     {
                                         // Tìm kiếm và lấy chứng chỉ X.509 từ token
                                         session.Login(CKU.CKU_USER, password);
+                                        SetPassword(serial, password);
                                         // check login 
                                         var objectAttributes = new List<IObjectAttribute>
                                         {
@@ -741,22 +788,27 @@ namespace SignTinDuc
                                         if (privateKeyHandles.Count > 0)
                                         {
                                             var privateKeyHandle = privateKeyHandles[0];
-                                            // Đọc nội dung file cần ký
 
+                                            // Dữ liệu cần ký (Base64 → byte[])
                                             byte[] data = Convert.FromBase64String(dataBase64);
-                                            byte[] hash = ComputeSha256Hash(data);
-                                            //Lấy dữ liệu của chứng chỉ
+
+                                            // Lấy dữ liệu chứng chỉ từ token
                                             byte[] certificateData = session.GetAttributeValue(certHandle, new List<CKA> { CKA.CKA_VALUE })[0].GetValueAsByteArray();
-                                            //Chuyển đổi dữ liệu thành đối tượng X509Certificate2
                                             var certificate = new X509Certificate2(certificateData);
-                                            // chỉ lấy chứng thư số còn hạn sử dụng
-                                            //if (certificate != null && certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
+
+                                            // Kiểm tra thời hạn chứng thư (nếu cần)
+                                            //if (certificate.NotBefore <= DateTime.Now && certificate.NotAfter >= DateTime.Now)
                                             //{
+                                            // Cơ chế ký: Token sẽ tự hash bằng SHA256 và ký
                                             var mechanism = factories.MechanismFactory.Create(CKM.CKM_SHA1_RSA_PKCS);
-                                            // chữ ký
-                                            byte[] signature = session.Sign(mechanism, privateKeyHandle, hash);
+
+                                            // Thực hiện ký dữ liệu gốc (không hash trước)
+                                            byte[] signature = session.Sign(mechanism, privateKeyHandle, data);
                                             //SignPdfWithPkcs11(filePath, filePathSign, signature, certificate);
                                             string base64data = SignXmlDocument(data, signature, certificate, dataImageBase64, 1, 50, 50, 50);
+                                            // Lấy danh sách cơ chế hỗ trợ
+                                           
+                                            //string base64data = SignXmlDocument(dataBase64, session, privateKeyHandle, certificate, dataImageBase64,1,1,1,1);
 
                                             msg = new Result((int)ResultStatus.OK, base64data, true, true, messId);
                                             session.Logout();
@@ -769,18 +821,21 @@ namespace SignTinDuc
                                         }
                                         else
                                         {
+                                            SetPassword(serial, null);
                                             session.Logout();
                                             msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy khóa cá nhân trên token \"}"), true, true, messId);
                                         }
                                     }
                                     catch (Exception e)
                                     {
+                                        SetPassword(serial, null);
                                         msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Bạn nhập sai mã PIN\"}"), true, true, messId);
                                     }
                                 }
                             }
                             else
                             {
+                                SetPassword(serial, null);
                                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Bạn chưa nhập mã PIN\"}"), true, true, messId);
                             }
                         }
@@ -793,14 +848,87 @@ namespace SignTinDuc
             }
             return msg;
         }
+
+        public static Result SignXmlUsbToken_V1(string dll, string serial, string dataBase64, string dataImageBase64, string messId)
+        {
+            Result msg = new Result();
+
+            try
+            {
+                // Bước 1: Check chứng thư trong Windows Certificate Store trước
+                X509Certificate2 certificate = null;
+                X509Store store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+                store.Open(OpenFlags.ReadOnly);
+
+                foreach (var cert in store.Certificates)
+                {
+                    if (cert.SerialNumber.Equals(serial, StringComparison.OrdinalIgnoreCase) 
+                        //&& cert.NotBefore <= DateTime.Now && cert.NotAfter >= DateTime.Now
+                        )
+                    {
+                        certificate = cert;
+                        break;
+                    }
+                }
+
+                store.Close();
+
+                if (certificate == null)
+                {
+                    msg = new Result((int)ResultStatus.ERROR,
+                        JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy chứng thư số hợp lệ trong Windows Store\"}"),
+                        true, true, messId);
+                    return msg;
+                }
+
+                // Bước 2: Dùng RSACryptoServiceProvider/RSACng để ký (Windows sẽ gọi vào Token CSP/KSP bên dưới)
+                byte[] data = Convert.FromBase64String(dataBase64);
+
+                byte[] signature;
+                using (var rsa = certificate.GetRSAPrivateKey())
+                {
+                    if (rsa == null)
+                    {
+                        msg = new Result((int)ResultStatus.ERROR,
+                            JsonConvert.DeserializeObject("{\"Message\":\"Không lấy được private key từ token\"}"),
+                            true, true, messId);
+                        return msg;
+                    }
+
+                    // Ký SHA256
+                    signature = rsa.SignData(data, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+                }
+
+                // Bước 3: Gắn chữ ký vào XML (hàm bạn đã có sẵn)
+                string base64data = SignXmlDocument(data, signature, certificate, dataImageBase64, 1, 50, 50, 50);
+
+                msg = new Result((int)ResultStatus.OK, base64data, true, true, messId);
+            }
+            catch (CryptographicException ex)
+            {
+                msg = new Result((int)ResultStatus.ERROR,
+                    JsonConvert.DeserializeObject("{\"Message\":\"Bạn nhập sai mã PIN hoặc chưa cắm USB Token\"}"),
+                    true, true, messId);
+            }
+            catch (Exception ex)
+            {
+                msg = new Result((int)ResultStatus.ERROR,
+                    JsonConvert.DeserializeObject("{\"Message\":\"Có lỗi khi ký: " + ex.Message + "\"}"),
+                    true, true, messId);
+            }
+
+            return msg;
+        }
+
+
         #endregion
         #region Ký nhiều file xml 
         public static Result SignMultipleFileXML(string dll, string serial, string dataBase64, string dataImageBase64, string messId)
         {
             Result msg = new Result();
             // lấy lại dll từ biển TempStorage
-            string pkcs11LibPath = CheckDLLMatchUSB(dll, serial);
-            if (pkcs11LibPath == "")
+            UsbTokenCacheItem tokenusb = CheckDLLMatchUSB(dll, serial);
+            if (tokenusb.PathDll == "")
             {
                 msg = new Result((int)ResultStatus.ERROR, JsonConvert.DeserializeObject("{\"Message\":\"Không tìm thấy thiết bị USB ký số\"}"), true, true, messId);
 
@@ -810,7 +938,7 @@ namespace SignTinDuc
                 Pkcs11InteropFactories factories = new Pkcs11InteropFactories();
                 try
                 {
-                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, pkcs11LibPath, AppType.SingleThreaded))
+                    using (IPkcs11Library pkcs11Library = factories.Pkcs11LibraryFactory.LoadPkcs11Library(factories, tokenusb.PathDll, AppType.SingleThreaded))
                     {
                         // Lấy danh sách các slot có token đang kết nối
                         List<ISlot> slots = pkcs11Library.GetSlotList(SlotsType.WithTokenPresent);
@@ -821,7 +949,7 @@ namespace SignTinDuc
                             ITokenInfo tokenInfo = slot.GetTokenInfo();
                             // kiểm tra cơ chế mã hóa  fpt-ca :29 , nca_v6:51 theo chuẩn này CKM_SHA1_RSA_PKCS, CKM_SHA256_RSA_PKCS
                             //var mechanisms = slot.GetMechanismList();
-                            var icon = GetIconFromDll(pkcs11LibPath, 0);
+                            var icon = GetIconFromDll(tokenusb.PathDll, 0);
                             // Mở session và đăng nhập vào token
                             string password = LoginForm.GetPassword(icon, tokenInfo.Model);
                             if (password != null && password != "")
@@ -907,10 +1035,24 @@ namespace SignTinDuc
             return msg;
         }
         #endregion
+
+        public static void SetPassword(string serial, string password)
+        {
+            if (_cache.TryGetValue(serial, out var cachedItem))
+                cachedItem.Password = password;
+        }
         public class Data
         {
             public string? Id { get; set; }
             public string? SignXml { get; set; }
+        }
+        public class UsbTokenCacheItem
+        {
+            public string PathDll { get; set; }
+            public string Serial { get; set; }
+            public string Label { get; set; }
+            public Icon Icon { get; set; }
+            public string Password { get; set; }
         }
     }
 }
